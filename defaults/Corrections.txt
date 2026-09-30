@@ -1,0 +1,17 @@
+# Fixes for words the speech model keeps getting wrong.
+# Format:   what it wrote => what it should be
+#
+# Matching ignores capitals, spaces and punctuation, so "kai sa", "Kaisa" and
+# "KAI-SA" are all the same thing. Only whole words/phrases are replaced.
+# The original wording is always kept too (as "text_raw" in the file).
+#
+# Spelling variants of official names (like "chogath" -> "Cho'Gath") are
+# already fixed automatically; this file is for real mishearings.
+# Add a line whenever you spot one. Lines starting with # are ignored.
+
+jarvan 4 => Jarvan IV
+j four => J4
+zayen => Zaahen
+zahen => Zaahen
+b.o.r.k. => BotRK
+k santa => K'Sante

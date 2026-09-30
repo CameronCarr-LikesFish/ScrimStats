@@ -1,0 +1,4 @@
+faster-whisper>=1.1
+av
+numpy
+requests>=2.28

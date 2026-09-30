@@ -1,0 +1,60 @@
+LoL Scrim Comms: how to use
+===========================
+
+Double-click "LoL Scrim Comms.exe". One window, three steps.
+
+
+1. RECORD GAMES  (before your scrim block)
+
+   Click "Start recording" and leave the app open. It waits for a game,
+   records each one on its own, and keeps going between games. It only
+   records the game on THIS PC, so run it on the PC you play from.
+
+   You can test it any time with Practice Tool.
+
+
+2. TRANSCRIBE COMMS  (after your scrim block)
+
+   In Discord: /stop Craig, open the link, download Multi-track -> FLAC.
+   (Craig deletes recordings after 7 days, so do this soon.)
+
+   Click "Add Craig download..." and pick the .zip (or put the .zip in the
+   "Craig downloads" folder yourself). Then click "Transcribe".
+
+   It takes roughly 20-45 minutes for a 3-hour block. You can stop it any
+   time; finished speakers are kept and it picks up where it left off.
+   It runs entirely on this PC. Nobody's voice is uploaded.
+
+
+3. REVIEW
+
+   "Edit roster": one line per player:  Name | Discord name | Riot ID
+   Do this once, and again whenever the team changes.
+
+   "Open dashboard": builds the stats and opens them in your browser.
+   Every stat is explained at the bottom of the dashboard.
+
+
+FOLDERS
+   Craig downloads    put Craig .zip files here
+   Game recordings    what the game recorder saved (one file per game)
+   Transcripts        who said what, when (.txt files are easy to read)
+   Settings           the word lists and roster (open with Notepad)
+   _data, _internal   the app's own files; no need to touch these
+
+   Dashboard.html and Comms stats.csv appear here after "Open dashboard".
+   The CSV opens in Excel or Google Sheets.
+
+You can move this whole folder anywhere (Desktop, Documents...). Keep
+everything inside it together.
+
+
+SETTINGS FILES  (Settings folder, open with Notepad)
+   Roster.txt              who's who
+   Callout types.txt       which phrases count as shotcalling, enemy info,
+                           my status, item timers, timers, and so on
+   League words.txt        words the speech model listens for; most
+                           important first
+   Champion nicknames.txt  J4, Asol, MF...
+   Corrections.txt         fixes for words it keeps mishearing,
+                           e.g.  zayen => Zaahen

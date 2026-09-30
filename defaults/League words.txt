@@ -1,0 +1,167 @@
+# Common League words and slang, one per line.
+#
+# These are fed to the speech model as hints. The model only has room for
+# about 200 words of hints at a time, so ORDER MATTERS: terms near the top
+# are always included, terms near the bottom only when there's room left
+# (the champions from your games always go first).
+#
+# Feel free to add your team's own callouts. Lines starting with # are ignored.
+
+# --- Roles and map ---
+top
+jungle
+jungler
+mid
+bot
+ADC
+support
+supp
+side lane
+bot side
+top side
+river
+tri-bush
+pixel bush
+raptors
+krugs
+gromp
+wolves
+red buff
+blue buff
+scuttle
+crab
+
+# --- Objectives ---
+drag
+dragon
+soul
+elder
+Baron
+Nash
+herald
+grubs
+voidgrubs
+Atakhan
+inhib
+nexus
+tower
+turret
+plates
+
+# --- Summoner spells and status ---
+flash
+TP
+ignite
+exhaust
+cleanse
+ghost
+barrier
+smite
+ult
+no flash
+flash down
+ult down
+ult up
+MIA
+SS
+oom
+CD
+level two
+level six
+
+# --- Stats ---
+AD
+AP
+CS
+HP
+MR
+crit
+lethality
+armor pen
+
+# --- Callouts and actions ---
+gank
+dive
+engage
+disengage
+peel
+roam
+invade
+back
+recall
+reset
+rotate
+group
+split push
+freeze
+slow push
+crash
+shove
+all in
+kite
+poke
+zone
+trade
+focus
+hold
+ping
+ward
+deward
+sweep
+vision
+control ward
+pink
+sweeper
+lens
+shutdown
+bounty
+first blood
+ace
+double
+triple
+quadra
+penta
+wave
+cannon wave
+backline
+frontline
+flank
+bait
+pick
+catch
+skirmish
+teamfight
+1-3-1
+1-4
+
+# --- Item nicknames ---
+Zhonya's
+GA
+QSS
+BotRK
+IE
+LDR
+Rabadon's
+Deathcap
+Void Staff
+Liandry's
+Luden's
+Rylai's
+Morello
+Randuin's
+Thornmail
+Sunfire
+Heartsteel
+Jak'Sho
+Shojin
+Kraken
+Trinity
+Black Cleaver
+Collector
+Mejai's
+Stopwatch
+Dark Seal
+Tear
+Sheen
+boots
+tier 2

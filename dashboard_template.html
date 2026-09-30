@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scrim Comms Dashboard</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --good: #006300;
+    --bad: #d03b3b;
+    --team: #52514e;
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255, 255, 255, 0.10); --good: #0ca30c; --bad: #d03b3b; --team: #c3c2b7;
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --muted: #898781; --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10); --good: #0ca30c; --bad: #d03b3b; --team: #c3c2b7;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  .sub { color: var(--ink-2); margin: 0; }
+  section { margin-top: 28px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px;
+  }
+  .note { color: var(--ink-2); font-size: 13px; margin: 2px 0 12px; }
+  .warnings { border-left: 3px solid var(--s4); padding: 10px 14px; background: var(--surface);
+    border-radius: 8px; margin-top: 18px; }
+  .warnings p { margin: 4px 0; font-size: 14px; }
+  .filters { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; }
+  .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-2); }
+  select, button {
+    font: inherit; font-size: 14px; color: var(--ink); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px;
+  }
+  button { cursor: pointer; }
+  button:hover, select:hover { border-color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 8px; margin: 12px 0 4px; }
+  .chip { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; }
+  .chip[aria-pressed="false"] { opacity: 0.45; }
+  .chip[aria-pressed="false"] .key { background: var(--muted) !important; }
+  .key { display: inline-block; width: 14px; height: 2px; border-radius: 1px; }
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart svg:focus { outline: 2px solid var(--s1); outline-offset: 4px; border-radius: 4px; }
+  .axis text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .tip {
+    position: absolute; pointer-events: none; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-size: 13px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12); min-width: 150px; z-index: 2;
+  }
+  .tip .when { color: var(--ink-2); margin-bottom: 4px; }
+  .tip .row { display: flex; align-items: center; gap: 8px; }
+  .tip .row b { font-variant-numeric: tabular-nums; min-width: 44px; }
+  .tip .row span:last-child { color: var(--ink-2); }
+  .empty { color: var(--ink-2); padding: 40px 0; text-align: center; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .pcard h3 { display: flex; align-items: center; gap: 8px; font-size: 16px; margin: 0 0 10px; }
+  .pcard h3 .key { width: 16px; height: 3px; }
+  .stat { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 5px 0;
+    border-top: 1px solid var(--grid); font-size: 14px; }
+  .stat .v { font-weight: 600; text-align: right; }
+  .stat .d { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); }
+  .stat .d.up-good, .stat .d.down-good { color: var(--good); }
+  .stat .d.up-bad, .stat .d.down-bad { color: var(--bad); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--grid);
+    white-space: nowrap; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--ink-2); font-weight: 600; font-size: 13px; }
+  .bar { display: inline-block; height: 6px; border-radius: 3px; vertical-align: middle; margin-right: 6px; }
+  dl { margin: 0; }
+  dt { font-weight: 600; margin-top: 10px; }
+  dd { margin: 2px 0 0; color: var(--ink-2); }
+  .link { background: none; border: none; color: var(--s1); padding: 0; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Scrim comms</h1>
+    <p class="sub" id="summary"></p>
+  </header>
+  <div id="warnings"></div>
+
+  <section>
+    <h2>Players: last 30 days</h2>
+    <p class="note" id="cards-note"></p>
+    <div class="cards" id="cards"></div>
+  </section>
+
+  <section>
+    <div class="filters card" role="group" aria-label="Filters">
+      <label>Stat <select id="f-metric"></select></label>
+      <label>Group by
+        <select id="f-group">
+          <option value="session">Session</option>
+          <option value="week">Week</option>
+          <option value="month" selected>Month</option>
+        </select>
+      </label>
+      <label>Games
+        <select id="f-result">
+          <option value="all">All games</option>
+          <option value="Win">Wins only</option>
+          <option value="Lose">Losses only</option>
+        </select>
+      </label>
+      <label>Time
+        <select id="f-range">
+          <option value="0">All time</option>
+          <option value="365">Last 12 months</option>
+          <option value="182">Last 6 months</option>
+          <option value="91">Last 3 months</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 id="chart-title"></h2>
+    <p class="note" id="chart-desc"></p>
+    <div class="legend" id="legend"></div>
+    <div class="chart" id="chart"></div>
+    <button class="link" id="table-toggle" aria-expanded="false">Show as table</button>
+    <div class="table-wrap" id="chart-table" hidden></div>
+  </section>
+
+  <section class="card">
+    <h2>Wins vs losses</h2>
+    <p class="note">How each player's comms differ between games you won and games you lost, for the time range above.</p>
+    <div class="table-wrap" id="winloss"></div>
+  </section>
+
+  <section class="card">
+    <h2>Sessions</h2>
+    <p class="note">Every scrim block in the time range above, newest first. Talk share = each player's part of all talking during games. Main shotcallers = people making at least 20% of the calls, per game.</p>
+    <div class="table-wrap" id="sessions"></div>
+  </section>
+
+  <section class="card">
+    <h2>What the numbers mean</h2>
+    <p class="note">All stats count words and phrases from the transcripts, so they can't hear tone or sarcasm and inherit any transcription mistakes. They're best for trends over weeks and months, not judging a single game. Phrase lists live in Settings\Callout types.txt; who a sentence is about is judged from words like I / you / he.</p>
+    <dl id="defs"></dl>
+  </section>
+</main>
+
+<script>
+const DATA = /*__DATA__*/null;
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
+    else if (k === "style") n.style.cssText = v; else n.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid != null) n.append(kid);
+  return n;
+};
+const SVG = "http://www.w3.org/2000/svg";
+const sv = (tag, attrs = {}) => {
+  const n = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  return n;
+};
+const DAY = 86400000;
+const parseDate = s => new Date(s + (s.length === 7 ? "-01" : "") + "T12:00:00");
+const monthName = d => d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+const dayName = d => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+
+// Each player keeps one color everywhere, by roster order (never re-ranked).
+const color = name => {
+  const i = DATA.players.indexOf(name);
+  return i >= 0 && i < 8 ? `var(--s${i + 1})` : "var(--muted)";
+};
+
+// ---------- stats ----------
+const FIELDS = ["minutes", "talk_s", "team_talk_s", "words", "fights", "fights_spoke",
+                "fight_words", "deaths", "deaths_blamed", "talk_overs", "objectives",
+                "objectives_itemcall", "team_shotcalls"];
+function addUp(rows) {
+  const t = { cats: {} };
+  FIELDS.forEach(f => t[f] = 0);
+  for (const r of rows) {
+    FIELDS.forEach(f => t[f] += r[f]);
+    for (const [k, v] of Object.entries(r.cats)) t.cats[k] = (t.cats[k] || 0) + v;
+  }
+  return t;
+}
+const MIN_MINUTES = 5;
+const per10 = (n, t) => t.minutes >= MIN_MINUTES ? 10 * n / t.minutes : null;
+const cat = (t, name) => t.cats[name] || 0;
+const INFO_KINDS = DATA.info_kinds;
+
+// "Main shotcallers per game": in each game with at least 10 shotcalls, how
+// many people made at least 20% of them. Averaged over the games. Team-only.
+function mainShotcallers(rows) {
+  const games = new Map();
+  for (const r of rows) {
+    if (!r.game) continue;
+    const key = r.session + "|" + r.game;
+    if (!games.has(key)) games.set(key, []);
+    games.get(key).push(r);
+  }
+  const counts = [];
+  for (const g of games.values()) {
+    const total = g[0].team_shotcalls;
+    if (total >= 10) counts.push(g.filter(r => (r.cats.Shotcalling || 0) / total >= 0.2).length);
+  }
+  return counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : null;
+}
+
+const METRICS = [
+  // --- Information ---
+  { group: "Information", key: "info", label: "Info calls per 10 min", unit: "", better: "up", team: true,
+    desc: "All four kinds of information together (enemy info, my status, item timers, timers), per 10 minutes of game time.",
+    f: t => per10(INFO_KINDS.reduce((a, k) => a + cat(t, k), 0), t) },
+  { group: "Information", key: "enemy", label: "Enemy info per 10 min", unit: "", better: "up", team: true,
+    desc: "Where enemies are and what they have: \"Kai'Sa no flash\", \"jungler MIA\", \"he's back\".",
+    f: t => per10(cat(t, "Enemy info"), t) },
+  { group: "Information", key: "status", label: "My status per 10 min", unit: "", better: "up", team: true,
+    desc: "Telling the team about yourself: \"I don't have flash\", \"I need to back\", \"I don't know where my laner is\".",
+    f: t => per10(cat(t, "My status"), t) },
+  { group: "Information", key: "items", label: "Item timers per 10 min", unit: "", better: "up", team: true,
+    desc: "Telling the team about your items: \"I'll have IE for drake\", \"I won't have my item\". Both count; either way the team knows.",
+    f: t => per10(cat(t, "Item timers"), t) },
+  { group: "Information", key: "itemsobj", label: "Item timers before objectives", unit: "%", better: "up", team: true,
+    desc: "Share of objectives (dragon, baron, herald, grubs, Atakhan) where they gave item info in the 90 seconds before it was taken.",
+    f: t => t.objectives > 0 ? 100 * t.objectives_itemcall / t.objectives : null },
+  { group: "Information", key: "timers", label: "Timers per 10 min", unit: "", better: "up", team: true,
+    desc: "When things come up: \"drag in 40\", \"flash up in 20\", \"baron up in a minute\".",
+    f: t => per10(cat(t, "Timers"), t) },
+  // --- Shotcalling ---
+  { group: "Shotcalling", key: "calls", label: "Shotcalls per 10 min", unit: "", better: null, team: true,
+    desc: "Calling the team plan: \"we're fighting drake\", \"reset\", \"group mid\", per 10 minutes of game time.",
+    f: t => per10(cat(t, "Shotcalling"), t) },
+  { group: "Shotcalling", key: "callshare", label: "Shotcall share", unit: "%", better: null, team: false,
+    desc: "Their part of all the team's shotcalls. Shows who the shotcallers are and whether that's changing.",
+    f: t => t.team_shotcalls > 0 ? 100 * cat(t, "Shotcalling") / t.team_shotcalls : null },
+  { group: "Shotcalling", key: "callers", label: "Main shotcallers per game", unit: "", better: null, team: true, teamOnly: true,
+    desc: "Team stat: in each game, how many people made at least 20% of the shotcalls (games with at least 10 calls). Too many people calling shows up as a high number.",
+    rowsF: mainShotcallers },
+  { group: "Shotcalling", key: "objmention", label: "Objective mentions per 10 min", unit: "", better: null, team: true,
+    desc: "Any mention of dragon, baron, herald, grubs, towers and so on, whether it's a call, a timer or info.",
+    f: t => per10(cat(t, "Objectives"), t) },
+  // --- Attitude ---
+  { group: "Attitude", key: "positivity", label: "Positivity", unit: "%", better: "up", team: true,
+    desc: "Positive phrases as a share of positive phrases + frustration aimed at teammates. Frustration at yourself doesn't count against you. Needs at least 3 such phrases.",
+    f: t => { const p = cat(t, "Positive"), n = cat(t, "Frustration at teammates"); return p + n >= 3 ? 100 * p / (p + n) : null; } },
+  { group: "Attitude", key: "atteam", label: "Frustration at teammates per 10 min", unit: "", better: "down", team: true,
+    desc: "Frustrated phrases aimed at someone (\"what are you doing\", \"why did you go in\"). \"Fuck this, I'm so bad\" is aimed at yourself and isn't counted.",
+    f: t => per10(cat(t, "Frustration at teammates"), t) },
+  { group: "Attitude", key: "accountability", label: "Accountability per 10 min", unit: "", better: "up", team: true,
+    desc: "Owning mistakes: \"my bad\", \"that's on me\", \"I misplayed\".",
+    f: t => per10(cat(t, "Accountability"), t) },
+  { group: "Attitude", key: "blame", label: "Blame after death", unit: "%", better: "down", team: true,
+    desc: "Share of their deaths followed within 20 s by frustration aimed at a teammate. Needs at least 2 deaths.",
+    f: t => t.deaths >= 2 ? 100 * t.deaths_blamed / t.deaths : null },
+  // --- Talking ---
+  { group: "Talking", key: "over", label: "Talking over teammates per 10 min", unit: "", better: "down", team: true,
+    desc: "How often they start talking while a teammate is mid-sentence, per 10 minutes of game time.",
+    f: t => per10(t.talk_overs, t) },
+  { group: "Talking", key: "wpm", label: "Words per minute", unit: "", better: null, team: true,
+    desc: "How much someone talks during games: words spoken per minute of game time.",
+    f: t => t.minutes >= MIN_MINUTES ? t.words / t.minutes : null },
+  { group: "Talking", key: "share", label: "Talk share", unit: "%", better: null, team: false,
+    desc: "Their part of all talking in the voice channel during games. Five equal talkers would each be 20%.",
+    f: t => t.team_talk_s > 0 ? 100 * t.talk_s / t.team_talk_s : null },
+  { group: "Talking", key: "fight", label: "Fight presence", unit: "%", better: "up", team: true,
+    desc: "Share of teamfights (3+ kills close together) where they said anything, from 10 s before the first kill to 5 s after the last.",
+    f: t => t.fights > 0 ? 100 * t.fights_spoke / t.fights : null },
+  { group: "Talking", key: "fightwords", label: "Words per teamfight", unit: "", better: null, team: true,
+    desc: "How much they say during an average teamfight.",
+    f: t => t.fights > 0 ? t.fight_words / t.fights : null },
+];
+const metric = key => METRICS.find(m => m.key === key);
+const fmt = (v, m) => v == null ? "–" : (m.unit === "%" ? `${Math.round(v)}%` : v >= 100 ? v.toFixed(0) : v.toFixed(1));
+
+// ---------- filters ----------
+const state = { metric: "info", group: "month", result: "all", range: 0, hidden: new Set(), table: false };
+const latestDate = DATA.rows.length ? DATA.rows.reduce((a, r) => r.date > a ? r.date : a, "") : null;
+function inRange(r) {
+  if (!state.range || !latestDate) return true;
+  return parseDate(latestDate) - parseDate(r.date) < state.range * DAY;
+}
+function filteredRows(ignoreResult = false) {
+  return DATA.rows.filter(r => inRange(r) && (ignoreResult || state.result === "all" || r.result === state.result));
+}
+
+// ---------- header, warnings ----------
+function renderHeader() {
+  const s = DATA.sessions;
+  if (!s.length) { $("summary").textContent = "No transcripts yet. Run the transcriber after a scrim, then run this again."; return; }
+  const games = s.reduce((a, x) => a + x.games, 0);
+  const w = s.reduce((a, x) => a + x.wins, 0), l = s.reduce((a, x) => a + x.losses, 0);
+  $("summary").textContent = `${s.length} scrim sessions, ${games} games (${w}–${l}), ` +
+    `${dayName(parseDate(s[0].date))} to ${dayName(parseDate(s[s.length - 1].date))}. ` +
+    `Updated ${new Date(DATA.generated).toLocaleString()}.`;
+  if (DATA.warnings.length) {
+    const box = el("div", { class: "warnings", role: "note" }, el("p", {}, el("b", { text: "Heads up" })));
+    DATA.warnings.forEach(w => box.append(el("p", { text: w })));
+    $("warnings").append(box);
+  }
+}
+
+// ---------- player cards (last 30 days vs the 30 before) ----------
+function renderCards() {
+  const wrap = $("cards");
+  wrap.replaceChildren();
+  if (!latestDate) return;
+  const end = parseDate(latestDate);
+  $("cards-note").textContent = `The 30 days up to your latest session (${dayName(end)}), with the change from the 30 days before that.`;
+  const keys = ["info", "itemsobj", "callshare", "positivity", "accountability", "over"].filter(metric);
+  for (const p of DATA.players) {
+    const mine = DATA.rows.filter(r => r.player === p);
+    const ago = r => (end - parseDate(r.date)) / DAY;
+    const now = addUp(mine.filter(r => ago(r) < 30));
+    const before = addUp(mine.filter(r => ago(r) >= 30 && ago(r) < 60));
+    const card = el("div", { class: "card pcard" },
+      el("h3", {}, el("span", { class: "key", style: `background:${color(p)}` }), el("span", { text: p })));
+    if (now.minutes === 0) card.append(el("p", { class: "note", text: "No games in the last 30 days." }));
+    for (const k of keys) {
+      const m = metric(k), v = m.f(now), prev = m.f(before);
+      const stat = el("div", { class: "stat" }, el("span", { text: m.label }), el("span", { class: "v", text: fmt(v, m) }));
+      if (v != null && prev != null) {
+        const diff = v - prev;
+        // Ignore normal week-to-week wobble: under 3 points for percentages,
+        // under 10% of the earlier value for everything else.
+        const small = m.unit === "%" ? Math.abs(diff) < 3 : Math.abs(diff) < Math.max(0.1, 0.1 * Math.abs(prev));
+        let cls = "", word = "";
+        if (!small && m.better) {
+          const good = (diff > 0) === (m.better === "up");
+          cls = (diff > 0 ? "up-" : "down-") + (good ? "good" : "bad");
+          word = good ? " (better)" : " (worse)";
+        }
+        const amount = m.unit === "%" ? `${Math.round(Math.abs(diff))} pts` : fmt(Math.abs(diff), m);
+        const arrow = small ? "■ about the same" : `${diff > 0 ? "▲ +" : "▼ −"}${amount}`;
+        stat.append(el("span", { class: "d " + cls, text: arrow + (small ? "" : word) + " vs the 30 days before" }));
+      } else if (v != null) {
+        stat.append(el("span", { class: "d", text: "no earlier data to compare" }));
+      }
+      card.append(stat);
+    }
+    wrap.append(card);
+  }
+}
+
+// ---------- trend chart ----------
+function periodOf(r) {
+  if (state.group === "session") return { key: r.date + "|" + r.session, date: r.date };
+  if (state.group === "week") return { key: r.week, date: r.week };
+  return { key: r.month, date: r.month };
+}
+function periodLabel(p) {
+  const d = parseDate(p.date);
+  if (state.group === "month") return monthName(d);
+  if (state.group === "week") return "Week of " + dayName(d);
+  return dayName(d) + (p.nth > 1 ? ` (#${p.nth})` : "");
+}
+function buildSeries() {
+  const m = metric(state.metric);
+  const rows = filteredRows();
+  const periods = new Map();
+  for (const r of rows) {
+    const p = periodOf(r);
+    if (!periods.has(p.key)) periods.set(p.key, { ...p, rows: [] });
+    periods.get(p.key).rows.push(r);
+  }
+  const list = [...periods.values()].sort((a, b) => a.key < b.key ? -1 : 1);
+  const perDay = {};
+  list.forEach(p => { perDay[p.date] = (perDay[p.date] || 0) + 1; p.nth = perDay[p.date]; });
+  const series = DATA.players.map(name => ({
+    name, color: color(name), team: false,
+    values: list.map(p => { const t = addUp(p.rows.filter(r => r.player === name)); return { v: m.teamOnly ? null : m.f(t), min: t.minutes }; }),
+  }));
+  if (m.team) series.unshift({
+    name: m.teamOnly ? "Team" : "Team average", color: "var(--team)", team: true,
+    values: list.map(p => { const t = addUp(p.rows); return { v: m.teamOnly ? m.rowsF(p.rows) : m.f(t), min: t.minutes }; }),
+  });
+  // A team-only stat (like main shotcallers) has just the one team line.
+  return { m, periods: list, series: m.teamOnly ? series.filter(x => x.team) : series };
+}
+
+function niceMax(v, pct) {
+  if (pct) return 100;
+  if (!(v > 0)) return 1;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const step of [1, 2, 2.5, 5, 10]) if (step * pow >= v) return step * pow;
+  return 10 * pow;
+}
+
+function renderChart() {
+  const { m, periods, series } = buildSeries();
+  $("chart-title").textContent = m.label + (state.result === "all" ? "" : state.result === "Win" ? " (wins)" : " (losses)");
+  $("chart-desc").textContent = m.desc;
+  renderLegend(series);
+  const box = $("chart");
+  box.replaceChildren();
+  const visible = series.filter(s => !state.hidden.has(s.name));
+  if (!periods.length || !visible.some(s => s.values.some(x => x.v != null))) {
+    box.append(el("p", { class: "empty", text: periods.length ? "Not enough data for this stat yet." : "No data in this time range." }));
+    renderChartTable(m, periods, series);
+    return;
+  }
+
+  const W = Math.max(320, box.clientWidth), H = 320;
+  const labelSpace = visible.length <= 4 ? 110 : 16;
+  const M = { l: 44, r: labelSpace, t: 12, b: 30 };
+  const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", tabindex: "0",
+    "aria-label": `${m.label} over time. Use left and right arrow keys to read values; the table view lists every value.` });
+  const x0 = parseDate(periods[0].date), x1 = parseDate(periods[periods.length - 1].date);
+  const span = Math.max(1, x1 - x0);
+  const X = p => periods.length === 1 ? (M.l + W - M.r) / 2 : M.l + (parseDate(p.date) - x0) / span * (W - M.l - M.r);
+  const maxV = Math.max(...visible.flatMap(s => s.values.map(x => x.v ?? 0)));
+  const top = niceMax(maxV * 1.05, m.unit === "%");
+  const Y = v => M.t + (1 - v / top) * (H - M.t - M.b);
+
+  // grid + y axis
+  const axis = sv("g", { class: "axis" });
+  for (let i = 0; i <= 4; i++) {
+    const v = top * i / 4, y = Y(v);
+    axis.append(sv("line", { x1: M.l, x2: W - M.r, y1: y, y2: y, stroke: i ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    const t = sv("text", { x: M.l - 8, y: y + 4, "text-anchor": "end" });
+    t.textContent = m.unit === "%" ? `${Math.round(v)}%` : String(Math.round(v * 10) / 10);
+    axis.append(t);
+  }
+  // x labels: a handful, evenly spread
+  const every = Math.max(1, Math.ceil(periods.length / Math.floor((W - M.l - M.r) / 90)));
+  periods.forEach((p, i) => {
+    if (i % every && i !== periods.length - 1) return;
+    if (i === periods.length - 1 && i % every && periods.length > 1 && X(p) - X(periods[i - (i % every)]) < 70) return;
+    const t = sv("text", { x: X(p), y: H - 8, "text-anchor": "middle" });
+    const d = parseDate(p.date);
+    t.textContent = state.group === "month" ? monthName(d) : d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    axis.append(t);
+  });
+  svg.append(axis);
+
+  // lines (team underneath), markers only when sparse
+  const showDots = periods.length <= 24;
+  const ends = [];
+  for (const s of [...visible].sort((a, b) => b.team - a.team)) {
+    let d = "", pen = false;
+    s.values.forEach((x, i) => {
+      if (x.v == null) { pen = false; return; }
+      d += `${pen ? "L" : "M"}${X(periods[i]).toFixed(1)},${Y(x.v).toFixed(1)}`;
+      pen = true;
+    });
+    svg.append(sv("path", { d, fill: "none", stroke: s.color, "stroke-width": s.team ? 3 : 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round", opacity: s.team ? 0.55 : 1 }));
+    if (showDots) s.values.forEach((x, i) => {
+      if (x.v != null) svg.append(sv("circle", { cx: X(periods[i]), cy: Y(x.v), r: 4, fill: s.color,
+        stroke: "var(--surface)", "stroke-width": 2, opacity: s.team ? 0.55 : 1 }));
+    });
+    const lastI = s.values.map(x => x.v != null).lastIndexOf(true);
+    if (lastI >= 0) ends.push({ s, y: Y(s.values[lastI].v), x: X(periods[lastI]) });
+  }
+  // direct labels at line ends (only when few enough series to stay readable)
+  if (visible.length <= 4) {
+    ends.sort((a, b) => a.y - b.y);
+    for (let i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 14) ends[i].y = ends[i - 1].y + 14;
+    for (const e of ends) {
+      const t = sv("text", { x: W - M.r + 8, y: e.y + 4, fill: "var(--ink-2)", "font-size": 12 });
+      t.textContent = e.s.name;
+      svg.append(t);
+    }
+  }
+
+  // hover / keyboard crosshair
+  const cross = sv("line", { y1: M.t, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" });
+  const hot = sv("g");
+  svg.append(cross, hot);
+  const hit = sv("rect", { x: M.l - 10, y: 0, width: W - M.l - M.r + 20, height: H, fill: "transparent" });
+  svg.append(hit);
+  box.append(svg);
+  const tip = el("div", { class: "tip", hidden: "" });
+  box.append(tip);
+
+  let current = -1;
+  function show(i) {
+    current = i;
+    const p = periods[i], cx = X(p);
+    cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+    hot.replaceChildren();
+    tip.replaceChildren(el("div", { class: "when", text: periodLabel(p) }));
+    const rowsHere = visible.map(s => ({ s, x: s.values[i] })).sort((a, b) => (b.x.v ?? -1) - (a.x.v ?? -1));
+    for (const { s, x } of rowsHere) {
+      if (x.v != null) hot.append(sv("circle", { cx, cy: Y(x.v), r: 5, fill: s.color, stroke: "var(--surface)", "stroke-width": 2 }));
+      tip.append(el("div", { class: "row" },
+        el("span", { class: "key", style: `background:${s.color}` }),
+        el("b", { text: fmt(x.v, m) }),
+        el("span", { text: s.name + (x.v == null && x.min > 0 ? " (too little data)" : "") })));
+    }
+    tip.hidden = false;
+    const bw = box.clientWidth, scale = box.clientWidth / W;
+    const left = cx * scale + 14;
+    tip.style.left = (left + tip.offsetWidth > bw ? cx * scale - tip.offsetWidth - 14 : left) + "px";
+    tip.style.top = "8px";
+  }
+  function hide() { cross.setAttribute("visibility", "hidden"); hot.replaceChildren(); tip.hidden = true; }
+  function nearest(evt) {
+    const r = svg.getBoundingClientRect(), px = (evt.clientX - r.left) * W / r.width;
+    let best = 0;
+    periods.forEach((p, i) => { if (Math.abs(X(p) - px) < Math.abs(X(periods[best]) - px)) best = i; });
+    return best;
+  }
+  hit.addEventListener("pointermove", e => show(nearest(e)));
+  hit.addEventListener("pointerleave", hide);
+  svg.addEventListener("keydown", e => {
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      show(Math.min(periods.length - 1, Math.max(0, current + (e.key === "ArrowRight" ? 1 : -1))));
+    } else if (e.key === "Escape") hide();
+  });
+  svg.addEventListener("blur", hide);
+  renderChartTable(m, periods, series);
+}
+
+function renderLegend(series) {
+  const wrap = $("legend");
+  wrap.replaceChildren();
+  for (const s of series) {
+    const chip = el("button", { class: "chip", "aria-pressed": String(!state.hidden.has(s.name)),
+      title: "Show or hide" }, el("span", { class: "key", style: `background:${s.color}` }), el("span", { text: s.name }));
+    chip.addEventListener("click", () => {
+      state.hidden.has(s.name) ? state.hidden.delete(s.name) : state.hidden.add(s.name);
+      renderChart();
+    });
+    wrap.append(chip);
+  }
+}
+
+function renderChartTable(m, periods, series) {
+  const wrap = $("chart-table");
+  wrap.replaceChildren();
+  const head = el("tr", {}, el("th", { text: state.group === "session" ? "Session" : state.group === "week" ? "Week" : "Month" }));
+  series.forEach(s => head.append(el("th", { text: s.name })));
+  const body = el("tbody");
+  [...periods].reverse().forEach(p => {
+    const i = periods.indexOf(p);
+    const tr = el("tr", {}, el("td", { text: periodLabel(p) }));
+    series.forEach(s => tr.append(el("td", { text: fmt(s.values[i].v, m) })));
+    body.append(tr);
+  });
+  wrap.append(el("table", {}, el("thead", {}, head), body));
+}
+
+// ---------- wins vs losses ----------
+function renderWinLoss() {
+  const rows = filteredRows(true);
+  const keys = ["info", "calls", "positivity", "over", "fight"].filter(metric);
+  const head1 = el("tr", {}, el("th", { text: "" }));
+  const head2 = el("tr", {}, el("th", { text: "Player" }));
+  keys.forEach(k => {
+    head1.append(el("th", { colspan: "2", style: "text-align:center", text: metric(k).label }));
+    head2.append(el("th", { text: "Wins" }), el("th", { text: "Losses" }));
+  });
+  const body = el("tbody");
+  const who = [...DATA.players, "Team average"];
+  for (const p of who) {
+    const mine = p === "Team average" ? rows : rows.filter(r => r.player === p);
+    const w = addUp(mine.filter(r => r.result === "Win")), l = addUp(mine.filter(r => r.result === "Lose"));
+    const tr = el("tr", {}, el("td", {}, el("span", { class: "key", style: `background:${p === "Team average" ? "var(--team)" : color(p)};margin-right:8px` }), p));
+    keys.forEach(k => tr.append(el("td", { text: fmt(metric(k).f(w), metric(k)) }), el("td", { text: fmt(metric(k).f(l), metric(k)) })));
+    body.append(tr);
+  }
+  const hasResults = rows.some(r => r.result);
+  $("winloss").replaceChildren(hasResults ? el("table", {}, el("thead", {}, head1, head2), body)
+    : el("p", { class: "empty", text: "No win/loss results yet. They come from the poller's recordings (the game's end screen)." }));
+}
+
+// ---------- sessions table ----------
+function renderSessions() {
+  const rows = filteredRows(true);
+  const head = el("tr", {}, ...["Date", "Games", "W–L", "Minutes", "Info/10 min", "Main shotcallers", "Positivity"].map(t => el("th", { text: t })));
+  DATA.players.forEach(p => head.append(el("th", { text: p })));
+  const body = el("tbody");
+  const info = metric("info"), pos = metric("positivity"), share = metric("share");
+  for (const s of [...DATA.sessions].reverse()) {
+    const mine = rows.filter(r => r.session === s.session);
+    if (!mine.length) continue;
+    const t = addUp(mine);
+    const tr = el("tr", {}, el("td", { text: dayName(parseDate(s.date)) }), el("td", { text: s.games || "–" }),
+      el("td", { text: s.games ? `${s.wins}–${s.losses}` : "–" }), el("td", { text: Math.round(s.minutes) }),
+      el("td", { text: fmt(info.f(t), info) }), el("td", { text: fmt(mainShotcallers(mine), metric("callers")) }),
+      el("td", { text: fmt(pos.f(t), pos) }));
+    DATA.players.forEach(p => {
+      const v = share.f(addUp(mine.filter(r => r.player === p)));
+      const td = el("td");
+      if (v != null) td.append(el("span", { class: "bar", style: `width:${Math.max(2, v * 0.6)}px;background:${color(p)}` }), fmt(v, share));
+      else td.textContent = "–";
+      tr.append(td);
+    });
+    body.append(tr);
+  }
+  $("sessions").replaceChildren(el("table", {}, el("thead", {}, head), body));
+}
+
+// ---------- definitions ----------
+function renderDefs() {
+  const dl = $("defs");
+  METRICS.forEach(m => dl.append(el("dt", { text: `${m.label} (${m.group})` }), el("dd", { text: m.desc })));
+  dl.append(el("dt", { text: "Team average" }),
+    el("dd", { text: "All players combined, per player, so it sits on the same scale as the individual lines." }));
+}
+
+// ---------- wire up ----------
+function renderAll() { renderChart(); renderWinLoss(); renderSessions(); }
+const sel = $("f-metric");
+for (const g of [...new Set(METRICS.map(m => m.group))]) {
+  const og = el("optgroup", { label: g });
+  METRICS.filter(m => m.group === g).forEach(m => og.append(el("option", { value: m.key, text: m.label })));
+  sel.append(og);
+}
+sel.value = state.metric;
+sel.addEventListener("change", () => { state.metric = sel.value; renderChart(); });
+$("f-group").addEventListener("change", e => { state.group = e.target.value; renderChart(); });
+$("f-result").addEventListener("change", e => { state.result = e.target.value; renderChart(); });
+$("f-range").addEventListener("change", e => { state.range = +e.target.value; renderAll(); });
+$("table-toggle").addEventListener("click", e => {
+  state.table = !state.table;
+  $("chart-table").hidden = !state.table;
+  e.target.textContent = state.table ? "Hide table" : "Show as table";
+  e.target.setAttribute("aria-expanded", String(state.table));
+});
+let resizeTimer;
+window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(renderChart, 150); });
+
+renderHeader();
+renderCards();
+renderDefs();
+renderAll();
+</script>
+</body>
+</html>

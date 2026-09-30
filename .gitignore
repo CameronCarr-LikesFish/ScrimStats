@@ -1,0 +1,18 @@
+# Build output
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+
+# Never commit app data: it holds teammates' voices, names and behavior.
+# (These live in the app folder, not here, but just in case.)
+Craig downloads/
+Game recordings/
+Transcripts/
+Settings/
+_data/
+Dashboard.html
+Comms stats.csv
+*.flac
+*.zip

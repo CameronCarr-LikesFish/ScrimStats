@@ -1,0 +1,49 @@
+# Champion nicknames people actually say in comms.
+# Format:   Official Name: nickname, nickname, ...
+#
+# When a champion is in one of your games, its nicknames are added to the
+# speech model's hints along with the real name. Add your own freely.
+# Lines starting with # are ignored.
+
+Aurelion Sol: Asol, A Sol
+Blitzcrank: Blitz
+Caitlyn: Cait
+Cassiopeia: Cass
+Cho'Gath: Cho
+Dr. Mundo: Mundo
+Evelynn: Eve
+Ezreal: Ez
+Fiddlesticks: Fiddle
+Gangplank: GP
+Hecarim: Hec, Heca
+Heimerdinger: Heimer
+Jarvan IV: J4, Jarvan
+Kassadin: Kass
+Katarina: Kat
+Kha'Zix: Kha, Khazix
+Kog'Maw: Kog
+K'Sante: KSante
+LeBlanc: LB
+Lee Sin: Lee
+Leona: Leo
+Malphite: Malph
+Miss Fortune: MF
+Mordekaiser: Mord, Morde
+Nautilus: Naut
+Nidalee: Nid, Nida
+Nocturne: Noc
+Nunu & Willump: Nunu
+Orianna: Ori
+Rek'Sai: Rek
+Renata Glasc: Renata
+Sejuani: Sej
+Tahm Kench: Tahm
+Tristana: Trist
+Twisted Fate: TF
+Vel'Koz: Vel, Velkoz
+Vladimir: Vlad
+Volibear: Voli
+Wukong: Wu, Monkey
+Xin Zhao: Xin
+Yasuo: Yas
+Zilean: Zil
