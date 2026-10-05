@@ -8,6 +8,11 @@
 # Spelling variants of official names (like "chogath" -> "Cho'Gath") are
 # already fixed automatically; this file is for real mishearings.
 # Add a line whenever you spot one. Lines starting with # are ignored.
+#
+# These fixes also apply to the English translations of Chinese lines, which
+# is how gaming slang the translator gets wrong is fixed (我的锅 = "my bad",
+# not "my pot"). Chinese fixes work too ("打也 => 打野"); for Chinese, any
+# match is replaced, since Chinese doesn't put spaces between words.
 
 jarvan 4 => Jarvan IV
 j four => J4
@@ -15,3 +20,14 @@ zayen => Zaahen
 zahen => Zaahen
 b.o.r.k. => BotRK
 k santa => K'Sante
+
+# --- Translations of Chinese gaming slang ---
+my pot => my bad
+xiaolong => drake
+xiao long => drake
+little dragon => drake
+small dragon => drake
+big dragon => baron
+
+# --- Chinese mishearings ---
+打也 => 打野

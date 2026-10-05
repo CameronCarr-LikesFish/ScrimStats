@@ -8,38 +8,48 @@
 # - Keep the type NAMES as they are (the dashboard relies on them).
 #   Add, remove or change the PHRASES freely.
 # - Lines starting with # are ignored.
+#
+# CHINESE: Chinese phrases can go on the same lines (separate them with
+# commas; Chinese commas ，and 、 work too). They're matched against the
+# original Chinese wording, so the stats don't depend on the translation.
+# Because Chinese doesn't put spaces between words, a Chinese phrase counts
+# wherever it appears in a line, so prefer phrases of 2+ characters.
+# Who a Chinese line is about: 我 = yourself (but not 我们, "we"),
+# 你 / 你们 = a teammate, 他 / 她 / 他们 / 对面 / a champion name = the enemy.
 
 # ===== SHOTCALLING: the team plan ("we are doing X") =====
-Shotcalling: let's, lets, we go, we're going, we are going, we fight, we can fight, we take, we do, we play, we need to, we should, group, reset, back off, go go, go in, all in, engage, disengage, don't fight, dont fight, don't go, dont go, hold, wait, play for, play around, look to, set up, rotate, push, split, start drag, start baron, take drag, take baron, take tower, take it, start it, focus, dive, follow, stop
+Shotcalling: let's, lets, we go, we're going, we are going, we fight, we can fight, we take, we do, we play, we need to, we should, group, reset, back off, go go, go in, all in, engage, disengage, don't fight, dont fight, don't go, dont go, hold, wait, play for, play around, look to, set up, rotate, push, split, start drag, start baron, take drag, take baron, take tower, take it, start it, focus, dive, follow, stop, 我们打, 我们上, 可以打, 打龙, 打小龙, 打大龙, 开大龙, 开小龙, 集合, 开团, 撤退, 先撤, 别打, 别上, 等我, 跟我, 一起上, 推塔, 带线, 分推, 回城吧, 打团, 准备打
 
 # ===== INFORMATION, four kinds =====
 
 # Where enemies are and what they have. (Doesn't count when the sentence is
 # about yourself: "I have no flash" is My status, not Enemy info.)
-Enemy info: mia, missing, showed, just showed, shows, is bot, is top, is mid, is jungle, is river, going top, going bot, going mid, on his way, on her way, coming, backed, he's back, she's back, they're back, no vision, warded, flash down, no flash, ult down, no ult, tp down, no tp, no summs, ignite down, exhaust down, heal down, barrier down, cleanse down, ghost down, has flash, has ult, has tp, level six, level 6, is low, oom, one shot, half hp, is dead
+Enemy info: mia, missing, showed, just showed, shows, is bot, is top, is mid, is jungle, is river, going top, going bot, going mid, on his way, on her way, coming, backed, he's back, she's back, they're back, no vision, warded, flash down, no flash, ult down, no ult, tp down, no tp, no summs, ignite down, exhaust down, heal down, barrier down, cleanse down, ghost down, has flash, has ult, has tp, doesn't have flash, does not have flash, doesn't have ult, without flash, level six, level 6, is low, oom, one shot, half hp, is dead, 不见了, 没有flash, 没flash, 没有大, 没有ult, 消失了, 没闪, 没有闪现, 交了闪现, 闪现没了, 没大, 大招没了, 交大了, 回家了, 回城了, 来了, 过来了, 在下路, 在上路, 在中路, 在野区, 去下路, 去上路, 去中路, 去野区, 去打龙, 没视野, 残血, 没蓝, 六级了
 
-# About yourself. Only counts when the sentence says I / I'm / my / me.
-My status: flash, ult, tp, summs, summoners, ignite, exhaust, heal, barrier, cleanse, ghost, smite, low, oom, mana, hp, health, back, recall, reset, level, lvl, cooldown, cd, don't know, dont know, can't, cant, won't make it, wont make it, on my way, coming, need, dead, stuck, zoned, have prio, no prio
+# About yourself. Only counts when the sentence says I / I'm / my / me
+# (or 我 for Chinese).
+My status: flash, ult, tp, summs, summoners, ignite, exhaust, heal, barrier, cleanse, ghost, smite, low, oom, mana, hp, health, back, recall, reset, level, lvl, cooldown, cd, don't know, dont know, can't, cant, won't make it, wont make it, on my way, coming, need, dead, stuck, zoned, have prio, no prio, 闪现, 大招, 没蓝, 残血, 回家, 回城, 不知道, 来不了, 赶不上, 马上到, 没技能, 等级
 
 # Your items and gold: "I'll have IE for drake", "I won't have item".
-# Only counts when the sentence says I / I'm / my / me. Every item name from
-# Riot's official list is added automatically; these are extra words and
-# nicknames.
-Item timers: item, items, gold, component, completed, complete, finish, finished, spike, boots, legendary, buy, buying, back for, ie, botrk, bork, zhonyas, zhonya's, ga, qss, ldr, deathcap, cap, void, liandrys, ludens, rylais, shojin, kraken, trinity, cleaver, collector, mejais, stopwatch, tear, sheen, bf sword, bf, pickaxe, dirk, serrated, lost chapter, blasting wand, needlessly large rod, nlr
+# Only counts when the sentence says I / I'm / my / me (or 我). Every item name
+# from Riot's official list is added automatically, in English and Chinese;
+# these are extra words and nicknames.
+Item timers: item, items, gold, component, completed, complete, finish, finished, spike, boots, legendary, buy, buying, back for, ie, botrk, bork, zhonyas, zhonya's, ga, qss, ldr, deathcap, cap, void, liandrys, ludens, rylais, shojin, kraken, trinity, cleaver, collector, mejais, stopwatch, tear, sheen, bf sword, bf, pickaxe, dirk, serrated, lost chapter, blasting wand, needlessly large rod, nlr, 装备, 出装, 大件, 小件, 金币, 差钱, 块钱, 能出, 出不了, 鞋子, 无尽, 中娅, 金身
 
 # When things come up: objectives, summoner spells, respawns.
-Timers: seconds, timer, spawns, spawns in, respawn, up in, comes up, is up, in 10, in 15, in 20, in 30, in 40, in 45, in 50, in 60, one minute, a minute, 1 minute, two minutes, 2 minutes
+Timers: seconds, timer, spawns, spawns in, respawn, up in, comes up, is up, in 10, in 15, in 20, in 30, in 40, in 45, in 50, in 60, one minute, a minute, 1 minute, two minutes, 2 minutes, 秒, 分钟, 刷新, 还有一分钟, 复活
 
 # ===== OTHER =====
 
 # Any mention of an objective (counted on top of the types above).
-Objectives: drag, dragon, baron, nash, herald, grubs, voidgrubs, atakhan, elder, soul, tower, turret, inhib, inhibitor, plates, nexus, objective
+Objectives: drag, dragon, baron, nash, herald, grubs, voidgrubs, atakhan, elder, soul, tower, turret, inhib, inhibitor, plates, nexus, objective, 小龙, 大龙, 先锋, 虚空虫, 远古龙, 龙魂, 防御塔, 高地, 水晶, 推塔
 
-Positive: nice, good job, gj, well played, wp, good stuff, no worries, nt, nice try, that's okay, it's okay, it's fine, all good, we got this, love it, great, clean, huge, insane, good call
+Positive: nice, good job, gj, well played, wp, good stuff, no worries, nt, nice try, that's okay, it's okay, it's fine, all good, we got this, love it, great, clean, huge, insane, good call, 漂亮, 打得好, 好样的, 牛逼, 太强了, 厉害, 没事, 没关系, 不要紧, 稳住, 加油
 
 # Frustration only counts AGAINST someone when it's aimed at a teammate
-# (the sentence says you / your / a teammate's name): "what are you doing".
-# Frustration at yourself ("fuck this, I'm so bad") is fine and isn't scored.
-Frustration: fuck, fucking, shit, wtf, what the fuck, what are you doing, are you serious, seriously, useless, trash, inting, report, stupid, idiot, come on, cmon, unbelievable, why would you, why did you, why are you, oh my god, ugh, bro why, dude
+# (the sentence says you / your / a teammate's name, or 你): "what are you
+# doing", "你在干嘛". Frustration at yourself ("fuck this, I'm so bad",
+# "卧槽我好菜") is fine and isn't scored.
+Frustration: fuck, fucking, shit, wtf, what the fuck, what are you doing, are you serious, seriously, useless, trash, inting, report, stupid, idiot, come on, cmon, unbelievable, why would you, why did you, why are you, oh my god, ugh, bro why, dude, 卧槽, 我靠, 妈的, 傻逼, 干嘛, 搞什么, 什么鬼, 为什么, 别送, 演员, 服了, 无语, 好菜
 
-Accountability: my bad, mb, my fault, sorry, that's on me, i messed up, i misplayed, i fucked up, i screwed up
+Accountability: my bad, mb, my fault, sorry, that's on me, i messed up, i misplayed, i fucked up, i screwed up, 我的锅, 我的错, 对不起, 不好意思, 怪我, 我失误

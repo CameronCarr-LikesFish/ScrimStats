@@ -171,7 +171,7 @@
 
   <section class="card">
     <h2>What the numbers mean</h2>
-    <p class="note">All stats count words and phrases from the transcripts, so they can't hear tone or sarcasm and inherit any transcription mistakes. They're best for trends over weeks and months, not judging a single game. Phrase lists live in Settings\Callout types.txt; who a sentence is about is judged from words like I / you / he.</p>
+    <p class="note">All stats count words and phrases from the transcripts, so they can't hear tone or sarcasm and inherit any transcription mistakes. They're best for trends over weeks and months, not judging a single game. Phrase lists live in Settings\Callout types.txt; who a sentence is about is judged from words like I / you / he (我 / 你 / 他 in Chinese). Chinese lines are sorted using Chinese phrases on the original wording, plus the English translation.</p>
     <dl id="defs"></dl>
   </section>
 </main>
@@ -210,12 +210,12 @@ const color = name => {
 // ---------- stats ----------
 const FIELDS = ["minutes", "talk_s", "team_talk_s", "words", "fights", "fights_spoke",
                 "fight_words", "deaths", "deaths_blamed", "talk_overs", "objectives",
-                "objectives_itemcall", "team_shotcalls"];
+                "objectives_itemcall", "team_shotcalls", "talk_zh_s"];
 function addUp(rows) {
   const t = { cats: {} };
   FIELDS.forEach(f => t[f] = 0);
   for (const r of rows) {
-    FIELDS.forEach(f => t[f] += r[f]);
+    FIELDS.forEach(f => t[f] += r[f] || 0);
     for (const [k, v] of Object.entries(r.cats)) t.cats[k] = (t.cats[k] || 0) + v;
   }
   return t;
@@ -302,6 +302,9 @@ const METRICS = [
   { group: "Talking", key: "fight", label: "Fight presence", unit: "%", better: "up", team: true,
     desc: "Share of teamfights (3+ kills close together) where they said anything, from 10 s before the first kill to 5 s after the last.",
     f: t => t.fights > 0 ? 100 * t.fights_spoke / t.fights : null },
+  { group: "Talking", key: "chinese", label: "Chinese share of talk", unit: "%", better: null, team: true,
+    desc: "How much of their talking is in Chinese. Worth watching if some teammates don't understand Chinese: those comms may not reach everyone. Chinese lines are still counted in every other stat.",
+    f: t => t.talk_s > 0 ? 100 * t.talk_zh_s / t.talk_s : null },
   { group: "Talking", key: "fightwords", label: "Words per teamfight", unit: "", better: null, team: true,
     desc: "How much they say during an average teamfight.",
     f: t => t.fights > 0 ? t.fight_words / t.fights : null },

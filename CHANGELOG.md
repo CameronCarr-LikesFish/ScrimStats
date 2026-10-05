@@ -24,6 +24,162 @@ development was 16.19.
 
 ---
 
+## [2.1.0]: 2026-10-05: Chinese (Mandarin) comms
+
+Some teammates sometimes talk in Chinese. Before this version, the
+English-only speech model turned Chinese speech into made-up English or
+dropped it. Now English and Mandarin are both understood, Chinese lines are
+translated, and the stats read Chinese directly.
+
+### Added
+
+- **Bilingual transcription.** The model now decides, for each stretch of
+  speech, whether it's English or Chinese, and writes it in that language.
+  It handles mixed sentences too ("Kai'Sa 没有 flash 了").
+  - It may only choose between English and Chinese. Left alone, it would
+    consider all 99 languages it knows, and could mistake a short English
+    callout for, say, Welsh.
+  - Each line is labeled `language: "en"` or `"zh"` in the transcript file.
+- **English translations of Chinese lines,** made on this PC by the same
+  model, with nothing uploaded.
+  - In the `.txt` transcript, Chinese lines are marked `(中文)` and followed
+    by `→ translation`. The `.jsonl` has `text_en` on every line.
+  - Translations are given a short League glossary (drake, baron, jungler,
+    flash, my bad…) plus the night's champions.
+- **Chinese in the stats.** Lines with Chinese are sorted with Chinese
+  phrases matched against the **original wording**, so the stats don't depend
+  on the translation being right. The English translation is checked too, and
+  a type counts if either finds it (still at most once per line). Examples:
+  - 我的锅 / 我的错 → accountability
+  - 你在干嘛 → frustration at a teammate
+  - 卧槽我好菜 → frustration at self (not scored)
+  - 对面打野不见了 → enemy info
+  - 我还差三百块出中娅 → item timer
+  - 我们打大龙 → shotcall
+- **"Who is it about" in Chinese:** 我 = yourself (but not 我们, "we"),
+  你 / 你们 = a teammate, and 他 / 她 / 对面 / a champion name = the enemy.
+  "My status" and "Item timers" need 我 within 6 characters.
+- **Riot's official Chinese names** for all 173 champions and 276 items,
+  downloaded alongside the English ones. Players say the short name
+  (卡莎 for Kai'Sa), but some epithets are used as nicknames (盲僧 for Lee
+  Sin), so both are kept.
+- **Chinese hints for the speech model:** Chinese League terms (小龙, 大龙,
+  打野, 闪现, 开团, 我的锅…) and the night's champions in Chinese. English and
+  Chinese hints have **separate budgets** (135 and 65 tokens), so neither can
+  crowd the other out.
+- **New stat: Chinese share of talk** (Talking group). It shows how much of
+  each player's talking is in Chinese, which matters if some teammates don't
+  understand it.
+- **Chinese phrase lists** in every callout type, Chinese League terms in
+  `League words.txt`, and translation fixes in `Corrections.txt`.
+- **Chinese fixes in `Corrections.txt`** ("打也 => 打野") are applied as
+  plain find-and-replace, since Chinese has no spaces between words.
+- **Filters for invented Chinese phrases:** subtitle credits and "like and
+  subscribe" lines (字幕, 订阅, 点赞, 谢谢观看…) that the model sometimes
+  "hears" in silence are dropped, like their English equivalents.
+- **Settings files upgrade safely.** A settings file that still exactly
+  matches an older version's default (nobody edited it) is replaced by the
+  new default, so the Chinese phrases reach existing installs. **An edited
+  file is never touched.** Your four settings files were unedited 2.0.1
+  defaults and have been upgraded.
+
+### Changed
+
+- **The speech model is now `small`** (bilingual) instead of `small.en`
+  (English-only). The 464 MB English-only model was removed from `_data` and
+  the bilingual one put in its place, so there's still no download.
+- **Speed:** nonstop English now runs at 0.14× real time (it was 0.10×,
+  because of the language checking). Nonstop Chinese runs at 0.30× (see
+  Fixed). The estimate for a 3-hour block is now **30–60 minutes**, longer
+  with a lot of Chinese.
+- **Words per minute counts Chinese fairly.** Words used to be counted by
+  splitting on spaces, which made a whole Chinese sentence count as one word
+  and would have made Chinese speakers look quiet. Chinese is now counted at
+  the usual ~1.5 characters per word.
+- **Callout phrase lists** also accept Chinese commas (，、) as separators.
+- **English lines heard in a mostly-Chinese stretch** have their Chinese
+  punctuation changed back to English punctuation ("…for this drake，" →
+  "…for this drake,").
+- **Saved name lists now have a format number**, so older saved copies are
+  re-downloaded automatically when the layout changes.
+
+### Fixed (during development)
+
+- **Translation was the bottleneck: 1.5 seconds per line.** The model always
+  works on 30-second chunks, so translating one short line at a time wasted
+  most of each chunk. Several Chinese lines are now packed into one chunk with
+  1.5-second silences between them and translated once. Each translated piece
+  goes back to its line by timing. Chinese went from 0.60× to **0.30×** real
+  time, and every test line still got its own translation.
+- **Random garbage translations.** When unsure, the model retries with some
+  randomness, which once turned 我的锅 ("my bad") into "My barradish
+  barradish". Translation now uses fixed settings, so the same audio always
+  gives the same result.
+- **Echoed hints.** With fixed settings and the full 135-token hint list, the
+  model sometimes "translated" by reading the hint list back ("Lee Sin, Lee,
+  K'Sante, Kai'Sa, Ahri, top, jungle…"). Translation now gets a short
+  glossary instead. Any piece that still looks like the hint list is thrown
+  out, and that line is re-translated on its own without hints.
+- **Riot's Chinese data swaps "name" and "title".** The first version stored
+  Kai'Sa as 虚空之女 ("Daughter of the Void") instead of 卡莎. Both forms
+  are now kept, with the short name first.
+- **Mixed-language enemy info was missed.** "卡莎没有Flash了" wasn't counted:
+  the Chinese list lacked "没有flash" and the English list lacked "doesn't
+  have flash". Both were added, and Chinese matching now ignores capitals
+  ("Flash" = "flash"). "去上路" ("went top") was added alongside "在上路"
+  ("is top").
+
+### Verified
+
+- **Choosing the model.** 11 test clips of Mandarin callouts, mixed sentences
+  and English, made with Microsoft's neural text-to-speech, plus the 6 earlier
+  English clips:
+  - **Language detection:** 17 of 17 correct, every time with 98%+
+    confidence, with both models.
+  - **small, no hints:** English unchanged. Chinese came out in Traditional
+    characters with League-term errors (打野 → 打也, 无尽之刃 → 無盡職任),
+    and translations were weak ("My pot, my pot", "Xiaolong" for drake).
+  - **medium:** better Chinese and translations, but **3× slower**.
+  - **small with hints:** Simplified characters, 打野 / 闪现 / 无尽之刃 right,
+    and usable translations ("I don't have flash", "The enemy jungle is gone,
+    watch out for the bot lane"). That's close to medium at a third of the
+    time, so it was chosen.
+- **End to end:** a fake two-person Craig recording mixing Mandarin, English
+  and mixed sentences, run through transcription and the stats:
+  - **Language:** all 11 lines labeled correctly.
+  - **Timing:** Chinese lines within **0.16 s** of when they were said, and
+    within 0.54 s for all lines.
+  - **Stats:** all 11 sorted into the intended types, even the 2 lines where
+    an item name was misheard ("能出" / "三百块" still marked them as item
+    timers). Chinese share was computed (77% and 82%).
+- **Repeatability:** two full runs gave identical translations, with no
+  echoed hints.
+- **Settings upgrade:** unedited old defaults were upgraded, and a file with
+  an edit was left untouched.
+- **Older data still works:** the fake year (45 sessions, 131 games) still
+  builds correctly.
+- **Packaged `.exe` self-test:** recorder, bilingual transcription (9 of 11
+  lines in Chinese, all translated), Riot's Chinese names and the dashboard
+  all ran inside the `.exe`, and it passed.
+
+### Known limitations
+
+- **Translations are rough,** especially for gaming slang. Use them to get
+  the gist. When a term keeps coming out wrong, add a line to
+  `Corrections.txt`, e.g. `my pot => my bad`.
+- **Some item names in Chinese speech** can still be misheard (无尽之刃 →
+  无尽职任 in testing). The surrounding words usually still mark the line as
+  an item timer.
+- **Language is decided per stretch of speech, up to 30 seconds,** not per
+  sentence. Someone switching language mid-stretch may have part of it
+  written in the other language. Mixed sentences are fine.
+- **Cantonese isn't supported.** These models handle it poorly; it would
+  need a much bigger, slower model.
+- **Tested with synthetic voices only.** Real Mandarin comms (accents,
+  crosstalk, slang) haven't been tried yet.
+
+---
+
 ## [2.0.1]: 2026-09-30: Ready for GitHub
 
 The project moves onto GitHub: the code lives in a repository, and the

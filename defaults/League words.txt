@@ -6,6 +6,31 @@
 # (the champions from your games always go first).
 #
 # Feel free to add your team's own callouts. Lines starting with # are ignored.
+#
+# Chinese words have their own share of the hint space, separate from the
+# English ones, so adding Chinese terms never pushes English ones out (and
+# the other way round). Chinese hints also help the model write Simplified
+# characters rather than Traditional.
+
+# --- Chinese (中文) League terms ---
+小龙
+大龙
+峡谷先锋
+虚空虫
+打野
+上路
+中路
+下路
+辅助
+闪现
+大招
+开团
+集合
+回城
+我的锅
+装备
+视野
+没闪
 
 # --- Roles and map ---
 top

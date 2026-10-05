@@ -11,7 +11,10 @@ the two up on one clock, and tracks each player's comms habits over months.
   Discord recording into who said what, and when. Speech-to-text runs
   **entirely on your PC** (Whisper), so nobody's voice is uploaded. It knows
   League vocabulary: every champion, item, ability, summoner spell and rune,
-  from Riot's official data.
+  from Riot's official data, in English and Chinese.
+- **English and Mandarin Chinese:** it detects which language is being
+  spoken, even in mixed sentences. Chinese lines are kept in Chinese with a
+  rough English translation, and the stats read Chinese directly.
 - **Review:** a dashboard of per-player stats over time:
   - **Information:** enemy info, my status, item timers, and timers, plus
     item timers before objectives.

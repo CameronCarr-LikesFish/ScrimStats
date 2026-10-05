@@ -1,0 +1,3 @@
+# Keep default settings byte-for-byte stable: the app recognises unedited
+# old defaults by their exact fingerprint (see OLD_DEFAULTS in common.py).
+defaults/*.txt text eol=lf

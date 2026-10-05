@@ -21,9 +21,18 @@ Double-click "LoL Scrim Comms.exe". One window, three steps.
    Click "Add Craig download..." and pick the .zip (or put the .zip in the
    "Craig downloads" folder yourself). Then click "Transcribe".
 
-   It takes roughly 20-45 minutes for a 3-hour block. You can stop it any
+   It takes roughly 30-60 minutes for a 3-hour block (longer if there is a
+   lot of Chinese, which also gets translated). You can stop it any
    time; finished speakers are kept and it picks up where it left off.
    It runs entirely on this PC. Nobody's voice is uploaded.
+
+   CHINESE: English and Mandarin are both understood, even mixed in one
+   sentence ("Kai'Sa 没有 flash 了"). Chinese lines are kept in Chinese,
+   marked (中文) in the transcript, and followed by a rough English
+   translation. The stats read the Chinese directly, using the Chinese
+   phrases in Settings\Callout types.txt, so they don't depend on the
+   translation being perfect. If the translation keeps getting a slang term
+   wrong, add a fix to Settings\Corrections.txt  (e.g.  my pot => my bad).
 
 
 3. REVIEW

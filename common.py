@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "LoL Scrim Comms"
-VERSION = "2.0.1"
+VERSION = "2.1.0"
 
 
 def app_dir():
@@ -51,13 +51,32 @@ class Paths:
         self.csv = self.root / "Comms stats.csv"
 
     def ensure(self):
-        """Create the folders and put default settings in place (never
-        overwriting ones you've edited)."""
+        """Create the folders and put default settings in place. A settings
+        file you've edited is never touched. One that still exactly matches
+        the default from an older version (so nobody edited it) is upgraded
+        to the new default, so improvements like new phrases reach you."""
         for folder in (self.craig, self.games, self.transcripts, self.settings, self.data):
             folder.mkdir(parents=True, exist_ok=True)
         for target in (self.callouts, self.league_words, self.nicknames, self.corrections):
-            if not target.exists():
-                source = bundled("defaults") / target.name
-                if source.exists():
-                    shutil.copyfile(source, target)
+            source = bundled("defaults") / target.name
+            if not source.exists():
+                continue
+            if not target.exists() or (sha256(target) in OLD_DEFAULTS.get(target.name, ())
+                                       and sha256(target) != sha256(source)):
+                shutil.copyfile(source, target)
         return self
+
+
+def sha256(path):
+    import hashlib
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+# Fingerprints of the settings files as shipped by earlier versions. A file
+# matching one of these hasn't been edited, so it's safe to upgrade.
+OLD_DEFAULTS = {
+    "Callout types.txt": {"c0940b96d254db171983e07dc81c71fe0e6251e3fd55143295562926ef9a9f74"},   # 2.0.x
+    "League words.txt": {"a28537c694a2c5549e8a3ade89842fa7122f54740502a581adf68b378235d5e3"},    # 2.0.x
+    "Champion nicknames.txt": {"e1da9b999b327571a0005319f16cdc353f3f1c920b45668c9b39d55fa9742f94"},
+    "Corrections.txt": {"af3ca11fb1e1757fe49784ef73ba0344746f574252914b54826f4a01e590bcf7"},     # 2.0.x
+}

@@ -54,7 +54,7 @@ NOT_REALLY_ITEMS = ("ward", "potion", "trinket", "elixir", "lens", "totem", "coo
 
 COUNT_FIELDS = ["minutes", "talk_s", "team_talk_s", "words", "fights", "fights_spoke",
                 "fight_words", "deaths", "deaths_blamed", "talk_overs", "objectives",
-                "objectives_itemcall", "team_shotcalls"]
+                "objectives_itemcall", "team_shotcalls", "talk_zh_s"]
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +166,9 @@ def load_categories(path):
     for line in read_list_file(path):
         if ":" in line:
             name, phrases = line.split(":", 1)
-            categories[name.strip()] = [p.strip() for p in phrases.split(",") if p.strip()]
+            # Chinese commas (，、) separate phrases too.
+            parts = re.split(r"[,，、]", phrases)
+            categories[name.strip()] = [p.strip() for p in parts if p.strip()]
     return categories
 
 
@@ -186,29 +188,61 @@ def item_phrases(vocab):
     return phrases
 
 
-SELF_REACH = 4   # "I/my" must be within this many words of a status/item word
+SELF_REACH = 4      # "I/my" must be within this many words of a status/item word
+SELF_REACH_ZH = 6   # ...or, in Chinese, this many characters of 我
+
+CJK = re.compile(r"[㐀-鿿豈-﫿]")
+ZH_ME = re.compile(r"我(?!们)")                         # 我 = I, but 我们 = we
+ZH_YOU = re.compile(r"你")                               # 你 / 你们 = you (a teammate)
+ZH_THEM = re.compile(r"他|她|它|对面|敌方|对方")          # he / she / they / the other team
+
+
+def has_chinese(text):
+    return bool(CJK.search(text or ""))
+
+
+def word_count(text):
+    """Words in a line. Chinese has no spaces, so its characters are counted
+    at the usual ~1.5 characters per word; everything else is split on spaces."""
+    chinese_chars = len(CJK.findall(text))
+    other_words = len(CJK.sub(" ", text).split())
+    return other_words + round(chinese_chars / 1.5)
 
 
 class Classifier:
     """Decides which kinds of comms one line of speech contains. Each kind
-    counts once per line: a line is roughly one callout."""
+    counts once per line: a line is roughly one callout.
+
+    A line is checked in English (the line itself, or the translation of a
+    Chinese line) and, if it has Chinese in it, with the Chinese phrases
+    against the original wording. A type counts if either finds it."""
 
     def __init__(self, categories, vocab, teammate_names):
-        self.matchers = {}
+        self.matchers, self.chinese = {}, {}
         for name, phrases in categories.items():
+            english = [p for p in phrases if not has_chinese(p)]
+            chinese = [p for p in phrases if has_chinese(p)]
             if name == "Item timers":
-                phrases = list(phrases) + sorted(item_phrases(vocab))
-            self.matchers[name] = PhraseMatcher(phrases)
+                english += sorted(item_phrases(vocab))
+                chinese += [i for i in vocab.get("items_zh", [])
+                            if not any(w in i for w in ("守卫", "药水", "饰品", "合剂"))]
+            self.matchers[name] = PhraseMatcher(english)
+            # Longest first, so 我的锅 is found before 锅 would be.
+            self.chinese[name] = sorted({p.lower() for p in chinese}, key=len, reverse=True)
         champions = vocab.get("champions", [])
         self.champions = PhraseMatcher(champions + [c.replace("'", "") for c in champions])
+        self.champions_zh = sorted({n for names in vocab.get("champions_zh", {}).values()
+                                    for n in ([names] if isinstance(names, str) else names)},
+                                   key=len, reverse=True)
         self.teammates = PhraseMatcher([n for n in teammate_names if n])
+        self.teammates_raw = [n.lower() for n in teammate_names if n]
 
     @staticmethod
     def near_me(words, span, me_positions):
         start, end = span
         return any(start - SELF_REACH <= p < end + SELF_REACH for p in me_positions)
 
-    def classify(self, text):
+    def english_kinds(self, text):
         words = plain_words(text).split()
         me_positions = [i for i, w in enumerate(words) if w in FIRST_PERSON]
         you = bool(set(words) & SECOND_PERSON) or bool(self.teammates.spans(words))
@@ -222,13 +256,44 @@ class Classifier:
                 spans = [s for s in spans if self.near_me(words, s, me_positions)]
             if name == "Enemy info" and me_positions and not them:
                 spans = []          # "I have no flash" is my status, not enemy info
-            if not spans:
-                continue
-            if name == "Frustration":
-                found.add(AT_TEAMMATES if you else AT_SELF)
-            else:
-                found.add(name)
+            if spans:
+                found.add((AT_TEAMMATES if you else AT_SELF) if name == "Frustration" else name)
+        return found
+
+    def chinese_kinds(self, text):
+        """The same rules for Chinese: phrases are found anywhere in the line
+        (Chinese has no spaces), and 我 / 你 / 他 decide who it's about."""
+        text = text.lower()          # so mixed lines match ("没有Flash" = "没有flash")
+        me_positions = [m.start() for m in ZH_ME.finditer(text)]
+        lowered = text
+        you = bool(ZH_YOU.search(text)) or any(n in lowered for n in self.teammates_raw)
+        them = (bool(ZH_THEM.search(text)) or any(c in text for c in self.champions_zh)
+                or bool(self.champions.spans(plain_words(text).split())))
+        found = set()
+        for name, phrases in self.chinese.items():
+            hits = []
+            remaining = text
+            for phrase in phrases:
+                start = remaining.find(phrase)
+                while start >= 0:
+                    hits.append((start, start + len(phrase)))
+                    remaining = remaining[:start] + "\x00" * len(phrase) + remaining[start + len(phrase):]
+                    start = remaining.find(phrase)
+            if name in ("My status", "Item timers"):
+                hits = [h for h in hits
+                        if any(h[0] - SELF_REACH_ZH <= p < h[1] + SELF_REACH_ZH for p in me_positions)]
+            if name == "Enemy info" and me_positions and not them:
+                hits = []
+            if hits:
+                found.add((AT_TEAMMATES if you else AT_SELF) if name == "Frustration" else name)
+        return found
+
+    def classify(self, text, text_en=None):
+        found = self.english_kinds(text_en or text)
+        if has_chinese(text):
+            found |= self.chinese_kinds(text)
         if AT_TEAMMATES in found:
+            found.discard(AT_SELF)
             found.discard("Shotcalling")   # "why did you go in" is blame, not a call
         return Counter({name: 1 for name in found})
 
@@ -350,7 +415,8 @@ def analyze_session(path, games, roster, classifier, warnings):
         u["player"] = roster.speaker(u["speaker"])
         if u["player"] is None:
             unmapped.add(u["speaker"])
-        u["counts"] = classifier.classify(u["text"])
+        u["counts"] = classifier.classify(u["text"], u.get("text_en"))
+        u["n_words"] = word_count(u["text"])
     track_players = {roster.speaker(t["speaker"]) for t in meta.get("tracks", [])} - {None}
 
     in_session = sorted((g for g in games if g["start"] < end and g["end"] > start),
@@ -415,17 +481,19 @@ def analyze_session(path, games, roster, classifier, warnings):
                 "minutes": round(minutes, 3),
                 "talk_s": round(sum(u["t_end"] - u["t"] for u in mine), 2),
                 "team_talk_s": round(team_talk, 2),
-                "words": sum(len(u["text"].split()) for u in mine),
+                "words": sum(u["n_words"] for u in mine),
                 "fights": len(fights),
                 "fights_spoke": sum(1 for f0, f1 in fights
                                     if any(u["t"] < f1 and u["t_end"] > f0 for u in mine)),
-                "fight_words": sum(len(u["text"].split()) for f0, f1 in fights
+                "fight_words": sum(u["n_words"] for f0, f1 in fights
                                    for u in mine if f0 <= u["t"] < f1),
                 "deaths": len(deaths[player]),
                 "deaths_blamed": sum(1 for d in deaths[player]
                                      if any(d <= u["t"] <= d + BLAME_WINDOW_S
                                             and u["counts"].get(AT_TEAMMATES) for u in mine)),
                 "talk_overs": talk_overs[player],
+                "talk_zh_s": round(sum(u["t_end"] - u["t"] for u in mine
+                                       if u.get("language") == "zh"), 2),
                 "team_shotcalls": team_shotcalls,
                 "objectives": len(objectives),
                 "objectives_itemcall": sum(1 for o in objectives
@@ -470,6 +538,7 @@ def derived_stats(t):
     stats["fight_presence_%"] = pct(t["fights_spoke"], t["fights"])
     stats["words_per_teamfight"] = round(t["fight_words"] / t["fights"], 1) if t["fights"] else ""
     stats["talk_overs_per_10min"] = per10(t["talk_overs"])
+    stats["chinese_share_%"] = pct(t["talk_zh_s"], t["talk_s"])
     return stats
 
 

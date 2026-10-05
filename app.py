@@ -137,7 +137,7 @@ class App:
         self.tr_status.pack(side="left", padx=(14, 0))
         ttk.Label(step2, text="After scrims: /stop Craig, download Multi-track → FLAC, then "
                               "\"Add Craig download…\" (or drop the .zip in the Craig downloads folder). "
-                              "Takes roughly 20–45 minutes for a 3-hour block.",
+                              "Takes roughly 30–60 minutes for a 3-hour block (longer with lots of Chinese).",
                   style="Sub.TLabel", wraplength=680).pack(anchor="w", pady=(8, 0))
 
         # Step 3: review
