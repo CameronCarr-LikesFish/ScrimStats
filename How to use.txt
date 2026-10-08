@@ -41,6 +41,9 @@ GAMES
    heralds. Have one of the five players run ScrimStats too and click
    "Start recording". After scrims they send you the new files from their
    "Game recordings" folder, and you click "Add a player's recordings...".
+   Drafted on drafter.lol? Paste the draft's link under "Drafts from
+   Drafter.lol" (one link covers the whole series). Picks, bans, sides and
+   pick order then show up in the dashboard's Champions table.
 
 SETTINGS
    The word lists the app uses (callout types, League words, champion

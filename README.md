@@ -30,8 +30,10 @@ the two up on one clock, and tracks each player's comms habits over months.
   - **Attitude:** positivity, flame at teammates (every flame line quoted word
     for word), accountability per play, and blame after death.
   - **Talking:** talking over teammates, fight presence, and talk share.
-  - **Champions:** win rate on every champion you've played or played
-    against, with icons.
+  - **Champions:** win rate on every champion you've played, played
+    against or banned, with icons. Add a [Drafter.lol](https://drafter.lol)
+    draft link and it's also broken down by pick order (first pick, first
+    phase, counter picks), with side and first-pick records.
   - **Between games:** what was said in lobby and draft, kept apart from
     the in-game stats.
 

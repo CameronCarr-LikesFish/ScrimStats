@@ -233,7 +233,18 @@
       <div class="row" style="margin-top:10px"><button class="plain" id="add-games">Add a player's recordings…</button><span class="saved" id="games-added"></span></div>
     </div>
     <div class="card">
-      <table><thead><tr><th>When</th><th class="num">Length</th><th class="num">Kills</th><th class="num">Objectives</th><th>Result</th><th>Recorded by</th><th>Spectator delay</th></tr></thead>
+      <h2>Drafts from Drafter.lol</h2>
+      <p class="hint" style="margin-top:0">Paste the link to a scrim's draft (one link has every game of the series). The app reads its
+        picks, bans, sides and pick order once, and matches each draft game to the recorded game with the same champions.
+        That unlocks pick-order stats on the dashboard, like your win rate when you first pick a champion.</p>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="draft-link" placeholder="https://drafter.lol/draft/…" style="flex:1">
+        <button class="plain" id="add-draft">Add draft</button><span class="saved" id="draft-msg"></span>
+      </div>
+      <div id="draft-list" style="margin-top:10px"></div>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>When</th><th class="num">Length</th><th class="num">Kills</th><th class="num">Objectives</th><th>Result</th><th>Draft</th><th>Recorded by</th><th>Spectator delay</th></tr></thead>
         <tbody id="games"></tbody></table>
       <p class="hint">League's usual spectator delay is 3 minutes. If you can't tell, have a player read out their game clock on Discord while you check yours.</p>
     </div>
@@ -510,7 +521,8 @@ $("save-roster").addEventListener("click", async () => {
 loaders.games = async () => {
   const games = await api.games();
   const body = $("games"); body.replaceChildren();
-  if (!games.length) { body.append(el("tr", {}, el("td", { colspan: "7", class: "muted", text: "No recorded games yet." }))); return; }
+  renderDrafts();
+  if (!games.length) { body.append(el("tr", {}, el("td", { colspan: "8", class: "muted", text: "No recorded games yet." }))); return; }
   for (const g of games) {
     const sel = el("select", { "aria-label": "Spectator delay" });
     for (const [v, t] of [[0, "None"], [180, "3 min (usual)"], [-1, "Other…"]]) sel.append(el("option", { value: v, text: t }));
@@ -529,6 +541,7 @@ loaders.games = async () => {
       el("td", { class: "num", text: g.kills }),
       el("td", { class: "num", text: g.spectator && !g.player_view ? "not shown" : g.objectives }),
       el("td", { text: g.result || "–" }),
+      el("td", { class: "muted", text: g.draft ? "✓ " + g.draft.split(" of ")[0] : "–", title: g.draft || "" }),
       el("td", {}, g.player_view ? el("span", { class: "badge", text: "Spectator + player" })
           : g.spectator ? el("span", { class: "badge warn", text: "Spectator" }) : el("span", { class: "badge", text: "Player" }),
         g.pieces > 1 ? el("div", { class: "muted", text: `joined from ${g.pieces} files` }) : null),
@@ -537,6 +550,27 @@ loaders.games = async () => {
   }
 };
 
+async function renderDrafts() {
+  const list = await api.drafts();
+  const box = $("draft-list"); box.replaceChildren();
+  for (const d of list) {
+    const remove = el("button", { class: "link", text: "Remove", onclick: async () => {
+      if (!confirm("Remove this draft? Its picks and bans stop counting (your recordings are kept).")) return;
+      await api.remove_draft(d.id); loaders.games(); } });
+    box.append(el("div", { class: "row", style: "padding:4px 0" },
+      el("span", { text: `${d.teams.join(" vs ")} · ${d.games} game${d.games === 1 ? "" : "s"}` }),
+      el("span", { class: "muted", text: d.link }), remove));
+  }
+}
+$("add-draft").addEventListener("click", async () => {
+  const link = $("draft-link").value.trim();
+  if (!link) return;
+  $("draft-msg").textContent = "Reading…";
+  const r = await api.add_draft(link);
+  $("draft-msg").textContent = r.message;
+  $("draft-msg").style.color = r.ok ? "" : "var(--bad)";
+  if (r.ok) { $("draft-link").value = ""; loaders.games(); }
+});
 $("add-games").addEventListener("click", async () => {
   const n = await api.add_games();
   $("games-added").textContent = n ? `Added ${n} file${n === 1 ? "" : "s"} ✓` : "";

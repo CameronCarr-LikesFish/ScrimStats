@@ -609,6 +609,130 @@ def kill_clusters(game):
 
 
 # ---------------------------------------------------------------------------
+# Drafts from Drafter.lol
+# ---------------------------------------------------------------------------
+# A scrim drafted on drafter.lol (then locked in blind in League) has its
+# pick order, bans and sides on the draft's public page. The app reads that
+# page once when a link is pasted in (Games tab) and keeps the result in
+# _data/drafts.json. Each draft game is matched to a recorded game by its
+# ten champions.
+
+DRAFTER_LINK = re.compile(r"drafter\.lol/draft/([A-Za-z0-9_-]+)")
+DRAFT_FIELDS = (["draftId", "id", "patch", "drafterBlue", "drafterRed", "firstPick", "fearless", "createdAt"]
+                + [f"{side}{kind}{n}" for side in ("blue", "red") for kind in ("Ban", "Pick") for n in range(1, 6)])
+
+
+def fetch_drafter(link):
+    """Every finished draft on a drafter.lol draft or series page."""
+    m = DRAFTER_LINK.search(link or "")
+    if not m:
+        raise ValueError("That isn't a drafter.lol draft link (it should look like drafter.lol/draft/abc123).")
+    import requests
+    page = requests.get(f"https://drafter.lol/draft/{m.group(1)}", timeout=20,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ScrimStats"}).text
+    # The page carries its data in Next.js "flight" chunks: JSON strings to join.
+    chunks = re.findall(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)', page)
+    payload = "".join(json.loads('"' + c + '"') for c in chunks)
+    drafts, decoder = {}, json.JSONDecoder()
+    for start in re.finditer(r'\{"id":\d+,"draftId":', payload):
+        try:
+            d, _ = decoder.raw_decode(payload, start.start())
+        except ValueError:
+            continue
+        if d.get("done") and d.get("bluePick1"):
+            drafts[d["draftId"]] = {k: d.get(k) for k in DRAFT_FIELDS}
+    if not drafts:
+        raise ValueError("No finished drafts on that page yet.")
+    ordered = sorted(drafts.values(), key=lambda d: d.get("id") or 0)
+    for n, d in enumerate(ordered, 1):
+        d["gameNumber"] = n
+    return {"id": m.group(1), "link": f"https://drafter.lol/draft/{m.group(1)}",
+            "fetched": datetime.now().astimezone().isoformat(timespec="seconds"), "drafts": ordered}
+
+
+def load_drafts(paths):
+    try:
+        return json.loads((paths.data / "drafts.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def add_drafter_link(paths, link):
+    series = fetch_drafter(link)
+    saved = load_drafts(paths)
+    saved[series["id"]] = series
+    (paths.data / "drafts.json").write_text(json.dumps(saved, indent=1, ensure_ascii=False), encoding="utf-8")
+    return series
+
+
+def remove_drafter_link(paths, series_id):
+    saved = load_drafts(paths)
+    saved.pop(series_id, None)
+    (paths.data / "drafts.json").write_text(json.dumps(saved, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
+def _plain(name):
+    return re.sub(r"[^a-z]", "", str(name or "").lower())
+
+
+# The few champions whose key isn't just their name without punctuation.
+ODD_KEYS = {"MonkeyKing": "Wukong", "Nunu": "Nunu & Willump", "Renata": "Renata Glasc"}
+
+
+def champion_names_by_key(paths=None):
+    """Drafter uses Riot's internal keys ("MonkeyKing", "Chogath"); the game
+    uses display names ("Wukong", "Cho'Gath"). Key -> display name, from the
+    icon lists (shipped with the app, or downloaded into _data)."""
+    ids = {}
+    for source in [bundled("champions") / "ids.json"] + ([paths.data / "champions" / "ids.json"] if paths else []):
+        try:
+            data = json.loads(source.read_text(encoding="utf-8"))
+            ids.update(data.get("ids", data) if isinstance(data, dict) else {})
+        except (OSError, ValueError):
+            pass
+    names = dict(ODD_KEYS)
+    names.update({key: name for name, key in ids.items() if isinstance(key, str)})
+    return names
+
+
+class DraftMatcher:
+    """Finds the draft for a recorded game: the one sharing at least 8 of
+    its 10 champions (a late swap doesn't break the match)."""
+
+    def __init__(self, saved, paths=None):
+        names = champion_names_by_key(paths)
+        self.games = []
+        for series in saved.values():
+            for d in series.get("drafts", []):
+                sides = {side: [names.get(d.get(f"{side}Pick{n}"), d.get(f"{side}Pick{n}")) for n in range(1, 6)]
+                         for side in ("blue", "red")}
+                bans = {side: [names.get(d.get(f"{side}Ban{n}"), d.get(f"{side}Ban{n}"))
+                               for n in range(1, 6) if d.get(f"{side}Ban{n}")] for side in ("blue", "red")}
+                self.games.append((series["id"], d, sides, bans))
+
+    def find(self, ours, theirs):
+        """ours / theirs: champion display names. Returns the draft as seen by us."""
+        mine, everyone = {_plain(c) for c in ours}, {_plain(c) for c in ours + theirs}
+        best, best_overlap = None, 0
+        for series_id, d, sides, bans in self.games:
+            overlap = len(everyone & {_plain(c) for side in sides.values() for c in side})
+            if overlap > best_overlap:
+                best, best_overlap = (series_id, d, sides, bans), overlap
+        if not best or best_overlap < 8:
+            return None
+        series_id, d, sides, bans = best
+        side = max(("blue", "red"), key=lambda s: len(mine & {_plain(c) for c in sides[s]}))
+        other = "red" if side == "blue" else "blue"
+        return {"series": series_id, "game": d.get("gameNumber"), "patch": d.get("patch"),
+                "side": side, "we_first": d.get("firstPick") == side,
+                "team": d.get("drafterBlue") if side == "blue" else d.get("drafterRed"),
+                "opponent": d.get("drafterRed") if side == "blue" else d.get("drafterBlue"),
+                "fearless": bool(d.get("fearless")),
+                "picks": sides[side], "their_picks": sides[other],
+                "bans": bans[side], "their_bans": bans[other]}
+
+
+# ---------------------------------------------------------------------------
 # Early / mid / late game
 # ---------------------------------------------------------------------------
 
@@ -744,7 +868,7 @@ class Roster:
 # Turning transcripts + games into numbers
 # ---------------------------------------------------------------------------
 
-def analyze_session(path, games, roster, classifier, warnings, reviews=None):
+def analyze_session(path, games, roster, classifier, warnings, reviews=None, drafts=None):
     records = read_jsonl(path)
     meta = next((r for r in records if r.get("type") == "meta"), None)
     utterances = [r for r in records if r.get("type") == "utterance"]
@@ -828,7 +952,7 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
             early_end, late = phase_times(game)
         team = roster.team_of(present)
         result = our_result(game, roster) if game else None
-        ours, theirs = [], []
+        ours, theirs, side = [], [], None
         if game:
             side = our_side(game, roster)
             for entry in game["players"]:
@@ -838,9 +962,11 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
                     ours.append([entry["championName"], roster.game_player(entry) or ""])
                 elif side:
                     theirs.append(entry["championName"])
+        draft = drafts.find([c for c, _ in ours], theirs) if drafts and ours else None
         played.append({**base, "game": number, "game_file": game["file"] if game else None,
                        "minutes": round((w1 - w0) / 60, 3), "result": result, "roster": team,
-                       "ours": ours, "theirs": theirs})
+                       "ours": ours, "theirs": theirs, "draft": draft,
+                       "side": {"ORDER": "blue", "CHAOS": "red"}.get(side)})
         played[-1]["_window"] = (w0, w1, game, early_end if game else None,
                                  late if game else None, entries)
 
@@ -1145,9 +1271,14 @@ def game_list(paths):
     """Every recorded game, merged and summarised, for the app's Games tab."""
     files = sorted(paths.games.glob("game_*.jsonl")) if paths.games.is_dir() else []
     roster = Roster.load(paths.roster)
+    drafts = DraftMatcher(load_drafts(paths), paths)
     out = []
     for g in load_games(files, load_game_delays(paths)):
         ours = [n for n in (roster.game_player(p) for p in g["players"]) if n]
+        side = our_side(g, roster)
+        champs = [p.get("championName") for p in g["players"] if p.get("championName")]
+        mine = [p.get("championName") for p in g["players"] if side and p.get("team") == side]
+        draft = drafts.find(mine, [c for c in champs if c not in mine]) if mine else None
         out.append({
             "id": g["file"], "start": g["start"], "end": g["end"], "pieces": len(g["files"]),
             "spectator": g["spectator"], "player_view": g["player_view"],
@@ -1158,6 +1289,7 @@ def game_list(paths):
             "champions": [p.get("championName") for p in g["players"]],
             "our_players": ours,
             "roster": roster.team_of(set(ours)),
+            "draft": f"Game {draft['game']} of drafter.lol/draft/{draft['series']}" if draft else None,
         })
     return out[::-1]
 
@@ -1249,12 +1381,13 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         log(f"  (Corrections not applied to the stats: {error})")
 
     warnings, all_rows, unmapped, played, quotes, between = [], [], set(), [], [], []
+    drafts = DraftMatcher(load_drafts(paths), paths)
     if roster.empty:
         warnings.append("No roster yet, so people are shown by Discord name and fight/death/objective "
                         "stats are missing. Open the Rosters tab to say who's who.")
     for path in transcripts:
         rows, missing, games_here, said, outside = analyze_session(
-            path, games, roster, classifier, warnings, load_flame_reviews(paths))
+            path, games, roster, classifier, warnings, load_flame_reviews(paths), drafts)
         quotes.extend(said)
         between.extend(outside)
         all_rows.extend(rows)
@@ -1308,7 +1441,9 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         "quotes": quotes,
         "between": between,
         "icons": champion_icons(paths, {c for g in played for c in
-                                        [x[0] for x in g["ours"]] + g["theirs"]}, log),
+                                        [x[0] for x in g["ours"]] + g["theirs"]
+                                        + ((g["draft"] or {}).get("bans", []) + (g["draft"] or {}).get("their_bans", []))},
+                                log),
         "warnings": warnings,
     }
     template = bundled("dashboard_template.html").read_text(encoding="utf-8")

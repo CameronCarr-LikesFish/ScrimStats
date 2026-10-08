@@ -24,6 +24,67 @@ development was 16.19.
 
 ---
 
+## [2.6.0]: 2026-10-08: Drafts from Drafter.lol: pick order, bans, sides
+
+Asked for: stats like "our win rate when we first-pick Yunara". The team
+drafts on drafter.lol, then locks in blind in League. League's own data has
+no pick order or bans at all, so the draft site is the only source.
+
+### How it reads Drafter.lol
+
+- Drafter.lol's official API needs a paid key. However, a draft's public
+  page carries its full data for the page itself to show: every game of the
+  series, with:
+  - both team names and sides, and who picked first
+  - the 10 bans
+  - the 10 picks in order
+  - the patch, and whether it's fearless
+- Paste the link once (**Games → Drafts from Drafter.lol**). The app reads
+  the page once and keeps the result in `_data/drafts.json`. It never
+  re-reads it on its own, so it's one page load per series. Drafter's terms
+  don't forbid this.
+- **Matching:** each draft game is matched to the recorded game that shares
+  at least 8 of its 10 champions, so one late swap doesn't break it. Our
+  side of the draft is the side with our champions.
+- **Champion names:** Drafter uses Riot's internal keys ("MonkeyKing",
+  "Chogath"). These are turned into the game's names ("Wukong", "Cho'Gath")
+  using the champion list shipped with the icons.
+
+### Added
+
+- **Champions table:**
+  - **Pick** filter:
+    - first pick of the draft
+    - the team's first pick
+    - picks 1–3 (first phase)
+    - picks 4–5 (second phase, usually counter picks)
+  - For the team you played against too ("their first pick").
+- **Bans view:** each champion banned by us and by them, and our W–L in
+  games where we banned it.
+- **Side and first pick:** blue-side and red-side W–L, W–L with and
+  without first pick, and how many games have a draft linked. Sides come
+  from the recording, so they work without drafts.
+- **Games tab:** a Draft column shows which draft game each recording
+  matched.
+
+### Verified
+
+- **The 2026-10-07 series (3 games, fearless, patch 16.20.1):**
+  - All 3 drafts matched their recorded games.
+  - The draft's side agreed with the recording's every time.
+  - Wukong / Cho'Gath / Jarvan IV / Kai'Sa / K'Sante key names translated
+    correctly.
+- **Dashboard numbers:**
+  - Blue side 1–0, red side 0–2.
+  - With first pick 1–0.
+  - First pick of the draft: Jinx, 1–0.
+  - Team's first pick: Jinx 1–0, Ashe 0–1, Cho'Gath 0–1.
+  - Bans: Bard banned by us in all 3 games.
+- **Bad links:** a non-Drafter link and a draft ID with nothing on it both
+  give a clear message instead of an error.
+
+---
+
 ## [2.5.0]: 2026-10-08: Champions, correct win/loss, between games, sharp on every monitor
 
 Asked for, while looking at 2.4.2:

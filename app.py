@@ -307,6 +307,28 @@ class Api:
             self._log(f"Added {added} game recording(s). They're joined with the matching spectated games.")
         return added
 
+    def drafts(self):
+        import analytics
+        return [{"id": s["id"], "link": s["link"], "games": len(s["drafts"]),
+                 "teams": sorted({d.get("drafterBlue") for d in s["drafts"]} | {d.get("drafterRed") for d in s["drafts"]})}
+                for s in analytics.load_drafts(self._paths).values()]
+
+    def add_draft(self, link):
+        """Read a drafter.lol draft page and keep its picks and bans."""
+        import analytics
+        try:
+            series = analytics.add_drafter_link(self._paths, link)
+        except Exception as error:
+            return {"ok": False, "message": str(error) if isinstance(error, ValueError)
+                    else f"Couldn't read that page ({type(error).__name__}). Check the link and your internet."}
+        self._log(f"Added drafter.lol draft {series['id']} ({len(series['drafts'])} game(s)).")
+        return {"ok": True, "message": f"Added {len(series['drafts'])} game(s) of picks and bans."}
+
+    def remove_draft(self, series_id):
+        import analytics
+        analytics.remove_drafter_link(self._paths, str(series_id))
+        return True
+
     def set_delay(self, game_id, seconds):
         import analytics
         analytics.save_game_delay(self._paths, Path(game_id).name, float(seconds or 0))

@@ -195,12 +195,24 @@
   <section class="card">
     <h2>Champions</h2>
     <p class="note">Every champion in your games, for the roster and time range above. Win rate is your team's, whether
-      you played the champion or played against it.</p>
+      you played the champion, played against it, or banned it. Pick order and bans come from Drafter.lol drafts added in the
+      Games tab.</p>
+    <p class="note" id="draft-summary"></p>
     <div class="filters" style="margin-bottom:10px">
       <label>Show
         <select id="c-side">
           <option value="ours">Our picks</option>
           <option value="theirs">Played against</option>
+          <option value="bans">Bans</option>
+        </select>
+      </label>
+      <label>Pick
+        <select id="c-slot">
+          <option value="all">Any pick</option>
+          <option value="draft1">First pick of the draft</option>
+          <option value="team1">Team's first pick</option>
+          <option value="p13">Picks 1–3 (first phase)</option>
+          <option value="p45">Picks 4–5 (second phase)</option>
         </select>
       </label>
       <label>Sort by
@@ -896,33 +908,81 @@ function champIcon(name) {
   if (src) return el("img", { src, alt: "" });
   return el("span", { class: "ini", text: name.replace(/[^A-Za-z]/g, "").slice(0, 2) });
 }
+const plain = n => String(n || "").toLowerCase().replace(/[^a-z]/g, "");
+// A game's picks for one team, with their pick slot (1–5 within the team)
+// when a draft is linked: [[champion, player, slot, pickedFirst]].
+function picksOf(g, side) {
+  if (g.draft) {
+    const list = side === "ours" ? g.draft.picks : g.draft.their_picks;
+    const first = side === "ours" ? g.draft.we_first : !g.draft.we_first;
+    return list.map((c, i) => [c, side === "ours" ? ((g.ours.find(([oc]) => plain(oc) === plain(c)) || [])[1] || "") : "", i + 1, first]);
+  }
+  return (side === "ours" ? g.ours : g.theirs.map(c => [c, ""])).map(([c, p]) => [c, p, null, null]);
+}
+function slotMatches(slot, pick) {
+  const [, , n, first] = pick;
+  if (slot === "all") return true;
+  if (n == null) return false;                       // no draft linked for this game
+  return slot === "draft1" ? n === 1 && first : slot === "team1" ? n === 1 : slot === "p13" ? n <= 3 : n >= 4;
+}
+function renderDraftSummary(games) {
+  const wl = list => `${list.filter(g => g.result === "Win").length}–${list.filter(g => g.result === "Lose").length}`;
+  const side = g => g.side || (g.draft && g.draft.side);
+  const drafted = games.filter(g => g.draft);
+  const parts = [`Blue side ${wl(games.filter(g => side(g) === "blue"))}`, `Red side ${wl(games.filter(g => side(g) === "red"))}`];
+  if (drafted.length) parts.push(`With first pick ${wl(drafted.filter(g => g.draft.we_first))}`,
+    `Without ${wl(drafted.filter(g => !g.draft.we_first))}`);
+  parts.push(`Drafts linked for ${drafted.length} of ${games.length} game${games.length === 1 ? "" : "s"}`);
+  $("draft-summary").textContent = parts.join(" · ");
+}
 function renderChampions() {
-  const side = $("c-side").value, sort = $("c-sort").value;
+  const side = $("c-side").value, sort = $("c-sort").value, slot = $("c-slot").value;
+  $("c-slot").disabled = side === "bans";
+  const games = gamesPlayed().filter(g => g.game && g.result);
+  renderDraftSummary(games);
   const stats = new Map();
-  for (const g of gamesPlayed()) {
-    if (!g.game || !g.result) continue;
-    const picks = side === "ours" ? g.ours : g.theirs.map(c => [c, ""]);
-    for (const [champ, player] of picks) {
-      if (!stats.has(champ)) stats.set(champ, { champ, games: 0, wins: 0, players: new Map() });
-      const c = stats.get(champ);
-      c.games++; c.wins += g.result === "Win";
-      if (player) c.players.set(player, (c.players.get(player) || 0) + 1);
+  const add = (champ, g, player, field) => {
+    if (!stats.has(champ)) stats.set(champ, { champ, games: 0, wins: 0, players: new Map(), byUs: 0, byThem: 0 });
+    const c = stats.get(champ);
+    if (field) { c[field]++; if (field === "byUs") { c.games++; c.wins += g.result === "Win"; } return; }
+    c.games++; c.wins += g.result === "Win";
+    if (player) c.players.set(player, (c.players.get(player) || 0) + 1);
+  };
+  for (const g of games) {
+    if (side === "bans") {
+      if (!g.draft) continue;
+      g.draft.bans.forEach(c => add(c, g, "", "byUs"));
+      g.draft.their_bans.forEach(c => add(c, g, "", "byThem"));
+      continue;
     }
+    for (const pick of picksOf(g, side)) if (slotMatches(slot, pick)) add(pick[0], g, pick[1]);
   }
   const list = [...stats.values()];
-  const rate = c => c.wins / c.games;
-  list.sort((a, b) => sort === "games" ? b.games - a.games || rate(b) - rate(a) || a.champ.localeCompare(b.champ)
+  const rate = c => c.games ? c.wins / c.games : 0;
+  if (side === "bans") list.sort((a, b) => (b.byUs + b.byThem) - (a.byUs + a.byThem) || a.champ.localeCompare(b.champ));
+  else list.sort((a, b) => sort === "games" ? b.games - a.games || rate(b) - rate(a) || a.champ.localeCompare(b.champ)
     : sort === "best" ? rate(b) - rate(a) || b.games - a.games : rate(a) - rate(b) || b.games - a.games);
   const wrap = $("champions");
-  if (!list.length) { wrap.replaceChildren(el("p", { class: "empty", text: "No finished games with a known result in this range yet." })); return; }
-  const head = el("tr", {}, ...["Champion", "Games", "W–L", "Win rate"].concat(side === "ours" ? ["Played by"] : [])
-    .map((t, i) => el("th", { text: t, style: i ? "" : "text-align:left" })));
+  if (!list.length) {
+    wrap.replaceChildren(el("p", { class: "empty", text: side === "bans" || slot !== "all"
+      ? "No games with a linked draft in this range yet. Add a Drafter.lol link in the Games tab."
+      : "No finished games with a known result in this range yet." }));
+    return;
+  }
+  const cols = side === "bans" ? ["Champion", "Banned by us", "Banned by them", "Our W–L when we ban it"]
+    : ["Champion", "Games", "W–L", "Win rate"].concat(side === "ours" ? ["Played by"] : []);
+  const head = el("tr", {}, ...cols.map((t, i) => el("th", { text: t, style: i ? "" : "text-align:left" })));
   const body = el("tbody");
   for (const c of list) {
+    const name = el("td", {}, el("span", { class: "champ" }, champIcon(c.champ), c.champ));
+    if (side === "bans") {
+      body.append(el("tr", {}, name, el("td", { text: c.byUs }), el("td", { text: c.byThem }),
+        el("td", { text: c.byUs ? `${c.wins}–${c.games - c.wins}` : "–" })));
+      continue;
+    }
     const pct = 100 * rate(c);
     const bar = el("span", { class: "wr" }, el("span", { style: `width:${pct}%;background:${pct >= 50 ? "var(--good)" : "var(--bad)"}` }));
-    const tr = el("tr", {},
-      el("td", {}, el("span", { class: "champ" }, champIcon(c.champ), c.champ)),
+    const tr = el("tr", {}, name,
       el("td", { text: c.games }), el("td", { text: `${c.wins}–${c.games - c.wins}` }),
       el("td", {}, bar, `${Math.round(pct)}%`));
     if (side === "ours") tr.append(el("td", { style: "text-align:left;white-space:normal",
@@ -931,7 +991,7 @@ function renderChampions() {
   }
   wrap.replaceChildren(el("table", {}, el("thead", {}, head), body));
 }
-["c-side", "c-sort"].forEach(id => $(id).addEventListener("change", renderChampions));
+["c-side", "c-sort", "c-slot"].forEach(id => $(id).addEventListener("change", renderChampions));
 
 // ---------- between games ----------
 function renderBetween() {
