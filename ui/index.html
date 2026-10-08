@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LoL Scrim Comms</title>
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7; --surface: #fcfcfb; --raised: #ffffff; --ink: #0b0b0b; --ink-2: #52514e;
+    --muted: #898781; --grid: #e1e0d9; --border: rgba(11,11,11,0.10); --accent: #2a78d6;
+    --accent-ink: #ffffff; --good: #0ca30c; --bad: #d03b3b; --warn: #eda100; --hover: rgba(11,11,11,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0d0d; --surface: #1a1a19; --raised: #222221; --ink: #ffffff; --ink-2: #c3c2b7;
+      --muted: #898781; --grid: #2c2c2a; --border: rgba(255,255,255,0.10); --accent: #3987e5;
+      --accent-ink: #ffffff; --hover: rgba(255,255,255,0.06);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; overflow: hidden; }
+  nav { width: 200px; flex: none; background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding: 18px 10px; gap: 2px; }
+  nav .brand { font-weight: 700; font-size: 16px; padding: 0 10px 2px; }
+  nav .ver { color: var(--muted); font-size: 12px; padding: 0 10px 16px; }
+  nav button { all: unset; cursor: pointer; padding: 8px 12px; border-radius: 8px; color: var(--ink-2); }
+  nav button:hover { background: var(--hover); color: var(--ink); }
+  nav button[aria-current="page"] { background: var(--hover); color: var(--ink); font-weight: 600; }
+  nav button:focus-visible { outline: 2px solid var(--accent); }
+  nav .spacer { flex: 1; }
+  nav .engine { font-size: 12px; color: var(--muted); padding: 8px 12px; }
+  main { flex: 1; overflow: auto; }
+  .page { display: none; padding: 24px 28px 40px; max-width: 1100px; }
+  .page.active { display: block; }
+  .page.full { max-width: none; height: 100%; padding: 0; display: none; flex-direction: column; }
+  .page.full.active { display: flex; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 8px; }
+  .sub { color: var(--ink-2); margin: 0 0 18px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .hint { color: var(--ink-2); font-size: 13px; margin: 10px 0 0; }
+  button.big { font: inherit; font-weight: 600; font-size: 15px; padding: 10px 22px; border-radius: 10px;
+    border: none; background: var(--accent); color: var(--accent-ink); cursor: pointer; min-width: 170px; }
+  button.big.stop { background: var(--bad); }
+  button.big:disabled { opacity: 0.6; cursor: default; }
+  button.plain { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--raised); color: var(--ink); cursor: pointer; }
+  button.plain:hover { border-color: var(--muted); }
+  button.link { all: unset; cursor: pointer; color: var(--accent); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--good); box-shadow: 0 0 0 3px rgba(12,163,12,0.2); }
+  .status { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
+  .log { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; height: 260px;
+    overflow: auto; padding: 10px 12px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; }
+  .log .t { color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+  th { color: var(--ink-2); font-size: 12px; font-weight: 600; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  select, input[type=text], input[type=number] { font: inherit; color: var(--ink); background: var(--raised);
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
+  input[type=text] { min-width: 180px; }
+  textarea { width: 100%; min-height: 420px; font: 12.5px/1.5 Consolas, "Cascadia Mono", monospace; color: var(--ink);
+    background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 12px; resize: vertical; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px; margin: 2px 4px 2px 0;
+    border-radius: 999px; background: var(--hover); border: 1px solid var(--border); font-size: 13px; }
+  .chip.missing { border-color: var(--warn); }
+  .chip button { all: unset; cursor: pointer; padding: 0 6px; color: var(--muted); font-size: 15px; }
+  .chip button:hover { color: var(--bad); }
+  .muted { color: var(--muted); }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--ink-2); }
+  .badge.warn { border-color: var(--warn); }
+  .saved { color: var(--good); font-size: 13px; }
+  .split { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
+  .list button { all: unset; display: block; width: 100%; box-sizing: border-box; cursor: pointer; padding: 8px 10px; border-radius: 8px; }
+  .list button:hover, .list button.sel { background: var(--hover); }
+  .viewer { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    font: 13px/1.6 system-ui, "Segoe UI", sans-serif; max-height: calc(100vh - 210px); overflow: auto; }
+  .viewer .line { padding: 2px 0; }
+  .viewer .when { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; font-size: 12px; }
+  .viewer .who { font-weight: 600; margin-right: 6px; }
+  .viewer .tr { color: var(--ink-2); padding-left: 24px; font-size: 12.5px; }
+  .toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  iframe { flex: 1; border: none; width: 100%; background: var(--page); }
+  .empty { color: var(--ink-2); padding: 30px 0; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs button[aria-pressed="true"] { border-color: var(--accent); }
+  .players { display: grid; gap: 10px; }
+  .player { display: grid; grid-template-columns: 220px 1fr 40px; gap: 12px; align-items: start;
+    padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--raised); }
+  .player .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<nav aria-label="Sections">
+  <div class="brand">LoL Scrim Comms</div>
+  <div class="ver" id="version"></div>
+  <button data-page="home" aria-current="page">Home</button>
+  <button data-page="dashboard">Dashboard</button>
+  <button data-page="transcripts">Transcripts</button>
+  <button data-page="roster">Roster</button>
+  <button data-page="games">Games</button>
+  <button data-page="settings">Settings</button>
+  <div class="spacer"></div>
+  <div class="engine" id="engine"></div>
+</nav>
+
+<main>
+  <!-- HOME -->
+  <section class="page active" id="page-home">
+    <h1>Home</h1>
+    <p class="sub">Record your games, transcribe your comms, see how they change over time.</p>
+
+    <div class="card">
+      <h2>1 · Record games</h2>
+      <div class="row">
+        <button class="big" id="rec-btn">Start recording</button>
+        <span class="status"><span class="dot" id="rec-dot"></span><span id="rec-status">Not recording</span></span>
+      </div>
+      <p class="hint">Start this before your scrim block and leave the app open. It records every game on its own,
+        from the PC it runs on (as a player or a spectator).</p>
+    </div>
+
+    <div class="card">
+      <h2>2 · Transcribe comms</h2>
+      <div class="row">
+        <button class="big" id="tr-btn">Transcribe</button>
+        <button class="plain" id="add-craig">Add Craig download…</button>
+        <span class="muted" id="tr-status"></span>
+      </div>
+      <p class="hint">After scrims: <b>/stop</b> Craig, download <b>Multi-track → FLAC</b>, then "Add Craig download…".
+        A 3-hour block takes about 10–15 minutes on the graphics card. Nothing is uploaded.</p>
+    </div>
+
+    <div class="card">
+      <h2>Activity</h2>
+      <div class="log" id="log" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <!-- DASHBOARD -->
+  <section class="page full" id="page-dashboard">
+    <div class="toolbar">
+      <b>Dashboard</b>
+      <button class="plain" id="dash-refresh">Refresh</button>
+      <span class="muted" id="dash-status"></span>
+    </div>
+    <iframe id="dash-frame" title="Dashboard"></iframe>
+  </section>
+
+  <!-- TRANSCRIPTS -->
+  <section class="page" id="page-transcripts">
+    <h1>Transcripts</h1>
+    <p class="sub">Who said what, and when. Chinese lines show a rough English translation underneath.</p>
+    <div class="split">
+      <div class="card list" id="tr-list" style="padding:8px"></div>
+      <div>
+        <div class="row" style="margin-bottom:10px">
+          <input type="text" id="tr-search" placeholder="Search this transcript…" style="flex:1">
+          <select id="tr-speaker"><option value="">Everyone</option></select>
+        </div>
+        <div class="viewer" id="tr-view"><div class="empty">Pick a transcript on the left.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROSTER -->
+  <section class="page" id="page-roster">
+    <h1>Roster</h1>
+    <p class="sub">Who's who. Pick each person's Discord name and in-game account from the lists of names found in your recordings.</p>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Players</h2>
+        <div class="row"><button class="plain" id="add-player">Add player</button>
+          <button class="big" id="save-roster" style="min-width:120px">Save</button><span class="saved" id="roster-saved"></span></div>
+      </div>
+      <p class="hint">Keep the same name when someone changes accounts, so their history stays together.
+        A name with an orange outline wasn't found in your recordings: check it, or remove it.</p>
+      <div class="players" id="players" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h2>Voices in your recordings</h2>
+      <p class="hint" style="margin-top:0">Discord names from Craig. Choose who each one is.</p>
+      <table><thead><tr><th>Discord name</th><th class="num">Lines spoken</th><th>Who is this?</th></tr></thead><tbody id="voices"></tbody></table>
+    </div>
+    <div class="card">
+      <h2>Accounts in your games</h2>
+      <p class="hint" style="margin-top:0">Riot IDs from recorded games, most frequent first. Your own players show up in most games;
+        opponents change. Champions played help you recognise them. Needed for fight, death and objective stats.</p>
+      <table><thead><tr><th>Riot ID</th><th class="num">Games</th><th>Champions played</th><th>Who is this?</th></tr></thead><tbody id="accounts"></tbody></table>
+      <button class="link" id="more-accounts" style="margin-top:10px">Show all accounts</button>
+    </div>
+  </section>
+
+  <!-- GAMES -->
+  <section class="page" id="page-games">
+    <h1>Games</h1>
+    <p class="sub">Every recorded game. Spectating can show the game late; set the delay for those games so their events line up with the comms.</p>
+    <div class="card">
+      <table><thead><tr><th>When</th><th class="num">Length</th><th class="num">Kills</th><th>Result</th><th>Watched as</th><th>Spectator delay</th></tr></thead>
+        <tbody id="games"></tbody></table>
+      <p class="hint">League's usual spectator delay is 3 minutes. If you can't tell, have a player read out their game clock on Discord while you check yours.</p>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="page" id="page-settings">
+    <h1>Settings</h1>
+    <p class="sub">The word lists the app uses. Changes apply the next time you transcribe (League words, nicknames, corrections) or open the dashboard (callout types).</p>
+    <div class="tabs" id="set-tabs"></div>
+    <p class="hint" id="set-help" style="margin-top:0"></p>
+    <textarea id="set-text" spellcheck="false" aria-label="Settings file"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="big" id="set-save" style="min-width:120px">Save</button><span class="saved" id="set-saved"></span>
+    </div>
+    <div class="card" style="margin-top:22px">
+      <h2>Folders</h2>
+      <div class="row">
+        <button class="plain" data-folder="root">App folder</button>
+        <button class="plain" data-folder="craig">Craig downloads</button>
+        <button class="plain" data-folder="games">Game recordings</button>
+        <button class="plain" data-folder="transcripts">Transcripts</button>
+      </div>
+      <p class="hint muted" id="app-folder"></p>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const el = (tag, attrs = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k === "text") n.textContent = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v); else n.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid != null) n.append(kid);
+  return n;
+};
+let api = null;
+const fmtTime = s => new Date(s * 1000).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const fmtLen = s => { s = Math.max(0, Math.round(s)); const m = Math.floor(s / 60); return m >= 60 ? `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")} h` : `${m} min`; };
+
+// ---------- navigation ----------
+const loaders = {};
+document.querySelectorAll("nav button[data-page]").forEach(b => b.addEventListener("click", () => show(b.dataset.page)));
+function show(page) {
+  document.querySelectorAll("nav button[data-page]").forEach(b => { if (b.dataset.page === page) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
+  if (loaders[page]) loaders[page]();
+}
+
+// ---------- home: status + log (polled) ----------
+let cursor = 0, busy = { recording: false, transcribing: false };
+async function poll() {
+  try {
+    // Never wait forever: a request sent while the window is still starting
+    // can go unanswered, and the next one must still go out.
+    const s = await Promise.race([api.status(cursor),
+      new Promise((_, fail) => setTimeout(() => fail(new Error("status timed out")), 4000))]);
+    cursor = s.cursor;
+    busy = s;
+    $("version").textContent = "v" + s.version;
+    $("engine").textContent = s.engine;
+    $("app-folder").textContent = s.folder;
+    $("rec-btn").textContent = s.recording ? "Stop recording" : "Start recording";
+    $("rec-btn").classList.toggle("stop", s.recording);
+    $("rec-btn").disabled = s.recorder_stopping;
+    $("rec-dot").classList.toggle("on", s.recording);
+    $("rec-status").textContent = s.rec_status;
+    $("tr-btn").textContent = s.transcribing ? "Stop" : "Transcribe";
+    $("tr-btn").classList.toggle("stop", s.transcribing);
+    $("tr-btn").disabled = s.transcribe_stopping;
+    $("tr-status").textContent = s.transcribing ? "Transcribing… (see Activity)" :
+      (s.waiting ? `${s.waiting} new recording${s.waiting === 1 ? "" : "s"} waiting` : "Nothing new to transcribe");
+    const log = $("log");
+    const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 30;
+    for (const [t, text] of s.log) log.append(el("div", {}, el("span", { class: "t", text: t + "  " }), text));
+    while (log.childElementCount > 2000) log.firstElementChild.remove();
+    if (atBottom && s.log.length) log.scrollTop = log.scrollHeight;
+  } catch (e) { console.error(e); }
+  finally { setTimeout(poll, 800); }
+}
+$("rec-btn").addEventListener("click", () => busy.recording ? api.recorder_stop() : api.recorder_start());
+$("tr-btn").addEventListener("click", async () => {
+  if (busy.transcribing) return api.transcribe_stop();
+  if (busy.recording && !confirm("The game recorder is running. Transcribing uses a lot of processing power and may lower your FPS if you're in a game.\n\nTranscribe anyway?")) return;
+  api.transcribe_start();
+});
+$("add-craig").addEventListener("click", () => api.add_craig());
+
+// ---------- dashboard ----------
+async function loadDashboard() {
+  $("dash-status").textContent = "Updating…";
+  const r = await api.dashboard();
+  $("dash-frame").srcdoc = r.html;
+  $("dash-status").textContent = r.summary || "";
+}
+loaders.dashboard = loadDashboard;
+$("dash-refresh").addEventListener("click", loadDashboard);
+
+// ---------- transcripts ----------
+let trLines = [];
+loaders.transcripts = async () => {
+  const list = await api.transcripts();
+  const box = $("tr-list"); box.replaceChildren();
+  if (!list.length) { box.append(el("div", { class: "empty", text: "No transcripts yet." })); return; }
+  for (const t of list) {
+    const b = el("button", { onclick: () => openTranscript(t.name, b) },
+      el("div", { text: fmtTime(t.start) }), el("div", { class: "muted", text: `${t.lines} lines · ${t.speakers.length} speakers` }));
+    box.append(b);
+  }
+};
+async function openTranscript(name, button) {
+  document.querySelectorAll("#tr-list button").forEach(b => b.classList.toggle("sel", b === button));
+  const r = await api.transcript(name);
+  trLines = r.lines;
+  const sel = $("tr-speaker"); sel.replaceChildren(el("option", { value: "", text: "Everyone" }));
+  for (const s of r.speakers) sel.append(el("option", { value: s, text: s }));
+  renderTranscript();
+}
+function renderTranscript() {
+  const q = $("tr-search").value.trim().toLowerCase(), who = $("tr-speaker").value;
+  const view = $("tr-view"); view.replaceChildren();
+  let shown = 0;
+  for (const u of trLines) {
+    if (who && u.speaker !== who) continue;
+    if (q && !(u.text.toLowerCase().includes(q) || (u.text_en || "").toLowerCase().includes(q))) continue;
+    if (++shown > 3000) { view.append(el("div", { class: "muted", text: "…more lines: narrow the search to see them." })); break; }
+    const line = el("div", { class: "line" }, el("span", { class: "when", text: u.when }),
+      el("span", { class: "who", text: u.speaker + (u.language === "zh" ? " (中文)" : "") }), u.text);
+    view.append(line);
+    if (u.language === "zh" && u.text_en) view.append(el("div", { class: "tr", text: "→ " + u.text_en }));
+  }
+  if (!shown) view.append(el("div", { class: "empty", text: "No matching lines." }));
+}
+$("tr-search").addEventListener("input", renderTranscript);
+$("tr-speaker").addEventListener("change", renderTranscript);
+
+// ---------- roster ----------
+let roster = { players: [], candidates: { discord: [], riot: [] } }, showAllAccounts = false;
+loaders.roster = async () => { roster = await api.roster(); $("roster-saved").textContent = ""; renderRoster(); };
+function owner(kind, value) {
+  const v = value.toLowerCase();
+  return roster.players.find(p => p[kind].some(x => x.toLowerCase() === v || (kind === "riot" && x.toLowerCase() === v.split("#")[0])));
+}
+function assign(kind, value, playerName) {
+  for (const p of roster.players) p[kind] = p[kind].filter(x => x.toLowerCase() !== value.toLowerCase() &&
+    !(kind === "riot" && x.toLowerCase() === value.toLowerCase().split("#")[0]));
+  const p = roster.players.find(p => p.name === playerName);
+  if (p) p[kind].push(value);
+  $("roster-saved").textContent = "Not saved yet";
+  renderRoster();
+}
+function renderRoster() {
+  const seen = { discord: new Set(roster.candidates.discord.map(d => d.name.toLowerCase())),
+                 riot: new Set(roster.candidates.riot.flatMap(r => [r.riotId.toLowerCase(), r.riotId.toLowerCase().split("#")[0]])) };
+  const box = $("players"); box.replaceChildren();
+  if (!roster.players.length) box.append(el("div", { class: "muted", text: "No players yet. Add one, then pick their Discord name and account below." }));
+  roster.players.forEach((p, i) => {
+    const name = el("input", { type: "text", value: p.name, "aria-label": "Player name" });
+    name.addEventListener("change", () => { p.name = name.value.trim(); $("roster-saved").textContent = "Not saved yet"; renderRoster(); });
+    const chips = (kind) => el("div", {}, ...p[kind].map(x => el("span", { class: "chip" + (seen[kind].has(x.toLowerCase()) ? "" : " missing"),
+      title: seen[kind].has(x.toLowerCase()) ? "" : "Not found in your recordings" }, x,
+      el("button", { "aria-label": "Remove " + x, onclick: () => { p[kind] = p[kind].filter(y => y !== x); $("roster-saved").textContent = "Not saved yet"; renderRoster(); }, text: "×" }))),
+      p[kind].length ? null : el("span", { class: "muted", text: "none yet" }));
+    box.append(el("div", { class: "player" },
+      el("div", {}, el("div", { class: "lbl", text: "Name" }), name),
+      el("div", {}, el("div", { class: "lbl", text: "Discord" }), chips("discord"), el("div", { class: "lbl", text: "Accounts" }), chips("riot")),
+      el("button", { class: "plain", title: "Remove player", "aria-label": "Remove " + p.name, text: "×",
+        onclick: () => { if (confirm(`Remove ${p.name || "this player"}?`)) { roster.players.splice(i, 1); $("roster-saved").textContent = "Not saved yet"; renderRoster(); } } })));
+  });
+  const picker = (kind, value) => {
+    const sel = el("select", { "aria-label": "Who is " + value });
+    sel.append(el("option", { value: "", text: kind === "riot" ? "— not on our team —" : "— not on the roster —" }));
+    for (const p of roster.players) if (p.name) sel.append(el("option", { value: p.name, text: p.name }));
+    const o = owner(kind, value); sel.value = o ? o.name : "";
+    sel.addEventListener("change", () => assign(kind, value, sel.value));
+    return sel;
+  };
+  const voices = $("voices"); voices.replaceChildren();
+  for (const d of roster.candidates.discord)
+    voices.append(el("tr", {}, el("td", { text: d.name }), el("td", { class: "num", text: d.lines }), el("td", {}, picker("discord", d.name))));
+  if (!roster.candidates.discord.length) voices.append(el("tr", {}, el("td", { colspan: "3", class: "muted", text: "No transcripts yet." })));
+  const accounts = $("accounts"); accounts.replaceChildren();
+  const list = showAllAccounts ? roster.candidates.riot : roster.candidates.riot.slice(0, 15);
+  for (const r of list)
+    accounts.append(el("tr", {}, el("td", { text: r.riotId }), el("td", { class: "num", text: r.games }),
+      el("td", { class: "muted", text: r.champions.slice(0, 6).join(", ") }), el("td", {}, picker("riot", r.riotId))));
+  if (!roster.candidates.riot.length) accounts.append(el("tr", {}, el("td", { colspan: "4", class: "muted", text: "No recorded games yet." })));
+  $("more-accounts").hidden = showAllAccounts || roster.candidates.riot.length <= 15;
+}
+$("more-accounts").addEventListener("click", () => { showAllAccounts = true; renderRoster(); });
+$("add-player").addEventListener("click", () => {
+  const name = prompt("Player's name (whatever you want to see on the dashboard):");
+  if (!name || !name.trim()) return;
+  roster.players.push({ name: name.trim(), discord: [], riot: [] });
+  $("roster-saved").textContent = "Not saved yet"; renderRoster();
+});
+$("save-roster").addEventListener("click", async () => {
+  await api.save_roster(roster.players.filter(p => p.name));
+  $("roster-saved").textContent = "Saved ✓";
+});
+
+// ---------- games ----------
+loaders.games = async () => {
+  const games = await api.games();
+  const body = $("games"); body.replaceChildren();
+  if (!games.length) { body.append(el("tr", {}, el("td", { colspan: "6", class: "muted", text: "No recorded games yet." }))); return; }
+  for (const g of games) {
+    const sel = el("select", { "aria-label": "Spectator delay" });
+    for (const [v, t] of [[0, "None"], [180, "3 min (usual)"], [-1, "Other…"]]) sel.append(el("option", { value: v, text: t }));
+    const custom = el("input", { type: "number", min: "0", max: "600", step: "1", style: "width:80px", "aria-label": "Delay in seconds" });
+    const known = [0, 180].includes(Math.round(g.delay));
+    sel.value = known ? String(Math.round(g.delay)) : "-1";
+    custom.value = Math.round(g.delay); custom.hidden = known;
+    const saved = el("span", { class: "saved" });
+    const save = async secs => { await api.set_delay(g.id, secs); saved.textContent = "Saved ✓"; setTimeout(() => saved.textContent = "", 1500); };
+    sel.addEventListener("change", () => { custom.hidden = sel.value !== "-1"; if (sel.value !== "-1") save(+sel.value); });
+    custom.addEventListener("change", () => save(Math.max(0, +custom.value || 0)));
+    body.append(el("tr", {},
+      el("td", {}, el("div", { text: fmtTime(g.start) }),
+        el("div", { class: "muted", text: g.our_players.length ? g.our_players.join(", ") : g.champions.slice(0, 10).join(", ") })),
+      el("td", { class: "num", text: fmtLen(g.end - g.start) }),
+      el("td", { class: "num", text: g.kills }),
+      el("td", { text: g.result || "–" }),
+      el("td", {}, g.spectator ? el("span", { class: "badge warn", text: "Spectator" }) : el("span", { class: "badge", text: "Player" }),
+        g.pieces > 1 ? el("div", { class: "muted", text: `rejoined from ${g.pieces} pieces` }) : null),
+      el("td", {}, g.spectator ? el("div", { class: "row" }, sel, custom, saved) : el("span", { class: "muted", text: "—" }))));
+  }
+};
+
+// ---------- settings ----------
+let settings = {}, current = null;
+loaders.settings = async () => {
+  settings = await api.settings_files();
+  const tabs = $("set-tabs"); tabs.replaceChildren();
+  for (const name of Object.keys(settings)) {
+    tabs.append(el("button", { class: "plain", "aria-pressed": String(name === (current || Object.keys(settings)[0])),
+      text: settings[name].title, onclick: () => pick(name) }));
+  }
+  pick(current || Object.keys(settings)[0]);
+};
+function pick(name) {
+  current = name;
+  document.querySelectorAll("#set-tabs button").forEach((b, i) => b.setAttribute("aria-pressed", String(Object.keys(settings)[i] === name)));
+  $("set-text").value = settings[name].text;
+  $("set-help").textContent = settings[name].help;
+  $("set-saved").textContent = "";
+}
+$("set-text").addEventListener("input", () => { $("set-saved").textContent = "Not saved yet"; });
+$("set-save").addEventListener("click", async () => {
+  await api.save_setting(current, $("set-text").value);
+  settings[current].text = $("set-text").value;
+  $("set-saved").textContent = "Saved ✓";
+});
+document.querySelectorAll("[data-folder]").forEach(b => b.addEventListener("click", () => api.open_folder(b.dataset.folder)));
+
+window.addEventListener("pywebviewready", () => { api = window.pywebview.api; poll(); });
+</script>
+</body>
+</html>

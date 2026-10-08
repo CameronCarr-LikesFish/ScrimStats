@@ -24,6 +24,91 @@ development was 16.19.
 
 ---
 
+## [2.3.0]: 2026-10-08: Everything in one app window
+
+Asked for after looking at the first real dashboard: everything should be one
+app, with no Notepad or separate browser tab. The dashboard had also looked
+broken, for two reasons: the roster had been typed with display names instead
+of Discord usernames, and the trend chart grouped one evening of data into a
+single "month" dot.
+
+### Added
+
+- **One window with a sidebar:** Home, Dashboard, Transcripts, Roster, Games,
+  Settings. It's built with pywebview, which shows the app's pages using the
+  WebView2 browser engine already in Windows.
+  - **Home:** record games and transcribe comms (as before), with the Activity
+    log.
+  - **Dashboard:** the stats, right in the app, with a Refresh button.
+  - **Transcripts:** pick a session, read who said what, search it, and filter
+    to one speaker. Chinese lines show their translation.
+  - **Roster:** players are built by **picking from lists of the names
+    actually found in your recordings**: Discord names, with how much each
+    person spoke, and Riot IDs, with games played and champions to help
+    recognise them. Names that aren't found in any recording are outlined, so
+    typos stand out.
+  - **Games:** every recorded game, merged pieces included, with spectated
+    games marked and a **per-game spectator delay** (None, 3 min, or a custom
+    number of seconds).
+  - **Settings:** the four word lists, edited in the app, plus buttons to open
+    the app's folders.
+- **A hidden-window self-check:** `LoL Scrim Comms.exe --ui-test` opens the
+  real window **hidden**, checks the page talks to the app and that every tab
+  loads, then closes. Results go to `_data\ui-test.log`.
+
+### Changed
+
+- **Per-game spectator delays.** The delay is set per game in the Games tab
+  and saved in `_data\game_delays.json`. Game 1 of 7 Oct, which was spectated
+  late, is set to the usual 3 minutes.
+- **The dashboard groups by session** until there are at least 3 months of
+  data. Grouping by month would otherwise show one dot.
+- **Messages point at the app's tabs**, not at `Roster.txt` and Notepad.
+  Unedited settings files from 2.1–2.2 upgrade automatically to the new
+  wording.
+- **`How to use.txt`** is rewritten for the one-window app.
+
+### Fixed (during development)
+
+- **The app took about 20 seconds to open.** pywebview looks through every
+  public attribute of the object the page talks to, and that object held a
+  reference to the whole window. Internal attributes are now private, and the
+  app is ready in about 1 second.
+- **The status updates could stop for good.** If the first request went out
+  while the window was still starting, it went unanswered and the loop never
+  asked again. Requests now time out after 4 seconds, and the next one always
+  goes out.
+- **Testing popped windows onto the screen** while the PC was in use (a
+  fullscreen game was running). Visual checks moved to a browser preview with
+  a copy of the data, and the packaged app is checked with the hidden-window
+  test.
+
+### Investigated: measuring the spectator delay from the comms
+
+People react out loud within seconds of a kill, so a delayed game should show
+reactions *before* the recorded kills. Scoring candidate delays from 0 to 300
+seconds:
+- **Games 2 and 3** (watched live) peaked at 0–6 seconds.
+- **Game 1** (watched late) gave inconsistent peaks between 95 and 219
+  seconds, because there were too few kills (32) to trust.
+
+So the delay stays a manual, per-game setting.
+
+### Verified
+
+- **Packaged `.exe`:**
+  - Self-test passed on the graphics card.
+  - The hidden-window test passed on the real app folder: version shown, 8
+    voices and 15 games listed, 1 transcript, 4 settings files, and the
+    dashboard built.
+- **Page content, on a copy of the real data:**
+  - Roster pickers showed the existing choices.
+  - Games showed the 3 spectated games merged from 7/31/24 pieces.
+  - Transcript search worked.
+  - The dashboard defaulted to grouping by session.
+
+---
+
 ## [2.2.0]: 2026-10-08: Transcribing on the graphics card, and fixing spectated games
 
 The first real scrim (8 speakers, 2.8 hours) went through the app. Two

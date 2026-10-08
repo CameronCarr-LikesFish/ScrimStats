@@ -1,4 +1,4 @@
-# How comms get sorted into types. Open with Notepad to edit.
+# How comms get sorted into types. Edit here in the app (Settings).
 # Format:   Type: phrase, phrase, phrase
 #
 # - Matching ignores capitals and punctuation, and only matches whole words

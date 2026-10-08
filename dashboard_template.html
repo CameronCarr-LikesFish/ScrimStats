@@ -313,7 +313,10 @@ const metric = key => METRICS.find(m => m.key === key);
 const fmt = (v, m) => v == null ? "–" : (m.unit === "%" ? `${Math.round(v)}%` : v >= 100 ? v.toFixed(0) : v.toFixed(1));
 
 // ---------- filters ----------
-const state = { metric: "info", group: "month", result: "all", range: 0, hidden: new Set(), table: false };
+// Group by month once there are a few months of data; until then by session
+// (one month would otherwise be a single dot).
+const MONTHS = new Set(DATA.rows.map(r => r.month)).size;
+const state = { metric: "info", group: MONTHS >= 3 ? "month" : "session", result: "all", range: 0, hidden: new Set(), table: false };
 const latestDate = DATA.rows.length ? DATA.rows.reduce((a, r) => r.date > a ? r.date : a, "") : null;
 function inRange(r) {
   if (!state.range || !latestDate) return true;
@@ -650,6 +653,7 @@ for (const g of [...new Set(METRICS.map(m => m.group))]) {
 }
 sel.value = state.metric;
 sel.addEventListener("change", () => { state.metric = sel.value; renderChart(); });
+$("f-group").value = state.group;
 $("f-group").addEventListener("change", e => { state.group = e.target.value; renderChart(); });
 $("f-result").addEventListener("change", e => { state.result = e.target.value; renderChart(); });
 $("f-range").addEventListener("change", e => { state.range = +e.target.value; renderAll(); });

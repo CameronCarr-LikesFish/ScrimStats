@@ -374,7 +374,7 @@ def read_game_file(path):
             "raw_events": raw_events, "spectator": spectator}
 
 
-def load_games(paths_list):
+def load_games(paths_list, delays=None):
     """Read every game recording, merge pieces of the same game (older
     versions split a spectated game at every rewind), drop repeated events,
     and put every event on the real-world clock."""
@@ -398,7 +398,8 @@ def load_games(paths_list):
         if any(later < earlier - 10 for earlier, later in zip(clock, clock[1:])):
             g["spectator"] = True
         real_time = live_timeline(g["observations"])
-        delay = SPECTATOR_DELAY_S if g["spectator"] else 0.0
+        # A spectator delay set in the app (Games tab) for this game, if any.
+        delay = float((delays or {}).get(g["files"][0], SPECTATOR_DELAY_S if g["spectator"] else 0.0))
         events, seen, result = [], set(), None
         for r in sorted(g["raw_events"], key=lambda r: parse_iso(r["wall_clock"])):
             key = event_key(r)
@@ -410,7 +411,7 @@ def load_games(paths_list):
             if r.get("EventName") == "GameEnd":
                 result = r.get("Result")
         starts = [e["wall"] for e in events if e.get("EventName") == "GameStart"]
-        games.append({"file": g["files"][0], "files": g["files"],
+        games.append({"file": g["files"][0], "files": g["files"], "delay": delay,
                       "start": (min(starts) if starts else g["start"]) - 0,
                       "end": g["end"], "players": g["players"], "events": events,
                       "result": result, "spectator": g["spectator"]})
@@ -641,12 +642,85 @@ def write_csv(path, rows):
 # Build everything
 # ---------------------------------------------------------------------------
 
+def load_game_delays(paths):
+    """Per-game spectator delays set in the app: {first file name: seconds}."""
+    path = paths.data / "game_delays.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_game_delay(paths, game_file, seconds):
+    delays = load_game_delays(paths)
+    if seconds:
+        delays[game_file] = float(seconds)
+    else:
+        delays.pop(game_file, None)
+    (paths.data / "game_delays.json").write_text(json.dumps(delays, indent=1), encoding="utf-8")
+
+
+def game_list(paths):
+    """Every recorded game, merged and summarised, for the app's Games tab."""
+    files = sorted(paths.games.glob("game_*.jsonl")) if paths.games.is_dir() else []
+    roster = Roster(load_roster(paths.roster))
+    out = []
+    for g in load_games(files, load_game_delays(paths)):
+        ours = [roster.game_player(p) for p in g["players"]]
+        out.append({
+            "id": g["file"], "start": g["start"], "end": g["end"], "pieces": len(g["files"]),
+            "spectator": g["spectator"], "delay": g["delay"], "result": g["result"],
+            "kills": sum(1 for e in g["events"] if e.get("EventName") == "ChampionKill"),
+            "champions": [p.get("championName") for p in g["players"]],
+            "our_players": [n for n in ours if n],
+        })
+    return out[::-1]
+
+
+def roster_candidates(paths):
+    """Who appears in the recordings, to pick from in the app's Roster tab:
+    the Discord names in transcripts and the Riot IDs in games."""
+    discord = {}
+    for path in sorted(paths.transcripts.glob("comms_*.jsonl")) if paths.transcripts.is_dir() else []:
+        for r in read_jsonl(path)[:1]:
+            for t in r.get("tracks", []):
+                d = discord.setdefault(t["speaker"], {"name": t["speaker"], "lines": 0, "sessions": 0})
+                d["lines"] += t.get("lines", 0)
+                d["sessions"] += 1
+    riot = {}
+    files = sorted(paths.games.glob("game_*.jsonl")) if paths.games.is_dir() else []
+    for g in load_games(files):
+        for p in g["players"]:
+            rid = p.get("riotId") or p.get("summonerName")
+            if not rid or rid == "#" or p.get("isBot"):
+                continue
+            entry = riot.setdefault(rid, {"riotId": rid, "games": 0, "champions": []})
+            entry["games"] += 1
+            if p.get("championName") and p["championName"] not in entry["champions"]:
+                entry["champions"].append(p["championName"])
+    return {"discord": sorted(discord.values(), key=lambda d: -d["lines"]),
+            "riot": sorted(riot.values(), key=lambda r: -r["games"])}
+
+
+def save_roster(paths, players):
+    """Write Roster.txt from the app's Roster tab: [{name, discord: [], riot: []}]."""
+    lines = ["# Your team's roster (edited in the app: Roster tab).",
+             "# Name | Discord username(s) | Riot ID(s)", ""]
+    for p in players:
+        name = str(p.get("name", "")).strip().replace("|", "/")
+        if not name:
+            continue
+        clean = lambda xs: ", ".join(str(x).strip().replace("|", "/").replace(",", " ") for x in xs if str(x).strip())
+        lines.append(f"{name} | {clean(p.get('discord', []))} | {clean(p.get('riot', []))}")
+    paths.roster.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def build(paths, log=print, open_browser=True, open_roster=True):
     """Rebuild Dashboard.html and Comms stats.csv. Returns the dashboard path."""
     transcripts = sorted(paths.transcripts.glob("comms_*.jsonl")) if paths.transcripts.is_dir() else []
     game_files = sorted(paths.games.glob("game_*.jsonl")) if paths.games.is_dir() else []
     log(f"Found {len(transcripts)} transcript(s) and {len(game_files)} recorded game(s).")
-    games = load_games(game_files)
+    games = load_games(game_files, load_game_delays(paths))
 
     if not paths.roster.exists():
         discord_names = set()
@@ -657,7 +731,7 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         riot_counts = Counter(p.get("riotId") for g in games for p in g["players"]
                               if p.get("riotId") and p.get("riotId") != "#")
         write_roster_template(paths.roster, discord_names, riot_counts)
-        log("Created Settings\\Roster.txt. Fill it in and save it, then rebuild the dashboard.")
+        log("No roster yet: open the Roster tab to say who's who.")
         if open_roster and os.name == "nt":
             os.startfile(paths.roster)
 
@@ -673,14 +747,14 @@ def build(paths, log=print, open_browser=True, open_roster=True):
 
     warnings, all_rows, unmapped = [], [], set()
     if roster.empty:
-        warnings.append("Roster.txt has no players yet, so people are shown by Discord name "
-                        "and fight/death/objective stats are missing. Fill in Settings\\Roster.txt.")
+        warnings.append("No roster yet, so people are shown by Discord name and fight/death/objective "
+                        "stats are missing. Open the Roster tab to say who's who.")
     for path in transcripts:
         rows, missing = analyze_session(path, games, roster, classifier, warnings)
         all_rows.extend(rows)
         unmapped |= missing
     if unmapped:
-        warnings.append("These Discord names aren't in Roster.txt, so their comms only count "
+        warnings.append("These Discord names aren't on the roster (Roster tab), so their comms only count "
                         "toward the team total: " + ", ".join(sorted(unmapped)))
     watched = [g for g in games if g.get("spectator")]
     if watched:
@@ -693,8 +767,8 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         seen = {n for g in games for n in (roster.game_player(p) for p in g["players"]) if n}
         missing_riot = [p["name"] for p in roster.players if p["riot"] and p["name"] not in seen]
         if missing_riot:
-            warnings.append("No recorded games have these players' Riot IDs (check spelling in "
-                            "Roster.txt): " + ", ".join(missing_riot))
+            warnings.append("No recorded games have these players' accounts (check them in the "
+                            "Roster tab): " + ", ".join(missing_riot))
 
     order = [p["name"] for p in roster.players]
     for r in all_rows:

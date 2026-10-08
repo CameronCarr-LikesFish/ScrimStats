@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "LoL Scrim Comms"
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 
 
 def app_dir():
@@ -40,7 +40,7 @@ class Paths:
         self.models = self.data / "models"
         self.work = self.data / "in-progress"
         self.vocab = self.data / "lol_vocabulary.json"
-        # Settings files (plain text, edit with Notepad)
+        # Settings files (plain text, edited in the app's Settings and Roster tabs)
         self.roster = self.settings / "Roster.txt"
         self.callouts = self.settings / "Callout types.txt"
         self.league_words = self.settings / "League words.txt"
@@ -75,8 +75,11 @@ def sha256(path):
 # Fingerprints of the settings files as shipped by earlier versions. A file
 # matching one of these hasn't been edited, so it's safe to upgrade.
 OLD_DEFAULTS = {
-    "Callout types.txt": {"c0940b96d254db171983e07dc81c71fe0e6251e3fd55143295562926ef9a9f74"},   # 2.0.x
-    "League words.txt": {"a28537c694a2c5549e8a3ade89842fa7122f54740502a581adf68b378235d5e3"},    # 2.0.x
+    "Callout types.txt": {"c0940b96d254db171983e07dc81c71fe0e6251e3fd55143295562926ef9a9f74",    # 2.0.x
+                          "08aab5039cd313701ef87d1b64b2db987f9fefd795cc0bb1c1fe0d87d9d4700d"},   # 2.1-2.2
+    "League words.txt": {"a28537c694a2c5549e8a3ade89842fa7122f54740502a581adf68b378235d5e3",     # 2.0.x
+                         "f994f3d59f51856fa8429da286cd9837b02470fed2b2c91cc96dc2f5f6055823"},    # 2.1-2.2
     "Champion nicknames.txt": {"e1da9b999b327571a0005319f16cdc353f3f1c920b45668c9b39d55fa9742f94"},
-    "Corrections.txt": {"af3ca11fb1e1757fe49784ef73ba0344746f574252914b54826f4a01e590bcf7"},     # 2.0.x
+    "Corrections.txt": {"af3ca11fb1e1757fe49784ef73ba0344746f574252914b54826f4a01e590bcf7",      # 2.0.x
+                        "c771240ccfabb456a50cb3e0f6fe8ea9fab72ce52da65803f733be383bd2e73e"},     # 2.1-2.2
 }

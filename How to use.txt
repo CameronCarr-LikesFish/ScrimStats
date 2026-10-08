@@ -1,69 +1,45 @@
 LoL Scrim Comms: how to use
 ===========================
 
-Double-click "LoL Scrim Comms.exe". One window, three steps.
+Double-click "LoL Scrim Comms.exe". Everything happens in that one window.
+The sections on the left:
 
+HOME
+   1. Record games: click "Start recording" before your scrim block and
+      leave the app open. It records every game on its own, as a player
+      or a spectator.
+   2. Transcribe comms: after scrims, /stop Craig in Discord and download
+      Multi-track -> FLAC. Click "Add Craig download...", then "Transcribe".
+      A 3-hour block takes about 10-15 minutes on the graphics card.
+      Nothing is uploaded.
+   The Activity box shows what's happening.
 
-1. RECORD GAMES  (before your scrim block)
+DASHBOARD
+   Each player's comms stats, and how they change over time. Every stat is
+   explained at the bottom.
 
-   Click "Start recording" and leave the app open. It waits for a game,
-   records each one on its own, and keeps going between games. It only
-   records the game on THIS PC, so run it on the PC you play from.
+TRANSCRIPTS
+   Read and search who said what. Chinese lines show a rough English
+   translation underneath.
 
-   You can test it any time with Practice Tool.
+ROSTER  (do this once, and when the team changes)
+   Add your players. Then, in the lists of names found in your recordings,
+   choose who each Discord name and in-game account belongs to. Save.
 
+GAMES
+   Every recorded game. If you spectated a game with a delay (the usual
+   spectator delay is 3 minutes), set it here so the game lines up with
+   the comms.
 
-2. TRANSCRIBE COMMS  (after your scrim block)
-
-   In Discord: /stop Craig, open the link, download Multi-track -> FLAC.
-   (Craig deletes recordings after 7 days, so do this soon.)
-
-   Click "Add Craig download..." and pick the .zip (or put the .zip in the
-   "Craig downloads" folder yourself). Then click "Transcribe".
-
-   It takes roughly 30-60 minutes for a 3-hour block (longer if there is a
-   lot of Chinese, which also gets translated). You can stop it any
-   time; finished speakers are kept and it picks up where it left off.
-   It runs entirely on this PC. Nobody's voice is uploaded.
-
-   CHINESE: English and Mandarin are both understood, even mixed in one
-   sentence ("Kai'Sa 没有 flash 了"). Chinese lines are kept in Chinese,
-   marked (中文) in the transcript, and followed by a rough English
-   translation. The stats read the Chinese directly, using the Chinese
-   phrases in Settings\Callout types.txt, so they don't depend on the
-   translation being perfect. If the translation keeps getting a slang term
-   wrong, add a fix to Settings\Corrections.txt  (e.g.  my pot => my bad).
-
-
-3. REVIEW
-
-   "Edit roster": one line per player:  Name | Discord name | Riot ID
-   Do this once, and again whenever the team changes.
-
-   "Open dashboard": builds the stats and opens them in your browser.
-   Every stat is explained at the bottom of the dashboard.
-
-
-FOLDERS
-   Craig downloads    put Craig .zip files here
-   Game recordings    what the game recorder saved (one file per game)
-   Transcripts        who said what, when (.txt files are easy to read)
-   Settings           the word lists and roster (open with Notepad)
-   _data, _internal   the app's own files; no need to touch these
-
-   Dashboard.html and Comms stats.csv appear here after "Open dashboard".
-   The CSV opens in Excel or Google Sheets.
+SETTINGS
+   The word lists the app uses (callout types, League words, champion
+   nicknames, corrections), and buttons to open the app's folders.
 
 You can move this whole folder anywhere (Desktop, Documents...). Keep
 everything inside it together.
 
-
-SETTINGS FILES  (Settings folder, open with Notepad)
-   Roster.txt              who's who
-   Callout types.txt       which phrases count as shotcalling, enemy info,
-                           my status, item timers, timers, and so on
-   League words.txt        words the speech model listens for; most
-                           important first
-   Champion nicknames.txt  J4, Asol, MF...
-   Corrections.txt         fixes for words it keeps mishearing,
-                           e.g.  zayen => Zaahen
+FOLDERS (you don't need to touch these)
+   Craig downloads, Game recordings, Transcripts, Settings: the app's data.
+   _data, _internal: the app's own files.
+   Dashboard.html and Comms stats.csv: copies of the stats. The CSV opens
+   in Excel or Google Sheets.

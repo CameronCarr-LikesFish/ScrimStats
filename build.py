@@ -108,6 +108,10 @@ def main():
         "--add-data", f"{HERE / 'dashboard_template.html'}{sep}.",
         "--add-data", f"{HERE / 'defaults'}{sep}defaults",
         "--add-data", f"{icon}{sep}.",
+        "--add-data", f"{HERE / 'ui'}{sep}ui",
+        # The app window: pywebview, using Windows' built-in WebView2 browser
+        # engine through pythonnet.
+        "--collect-all", "webview", "--collect-all", "pythonnet", "--collect-all", "clr_loader",
         "--collect-all", "faster_whisper",
         "--collect-all", "ctranslate2",
         "--collect-all", "onnxruntime",
