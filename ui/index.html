@@ -103,7 +103,7 @@
   <button data-page="home" aria-current="page">Home</button>
   <button data-page="dashboard">Dashboard</button>
   <button data-page="transcripts">Transcripts</button>
-  <button data-page="roster">Roster</button>
+  <button data-page="roster">Rosters</button>
   <button data-page="games">Games</button>
   <button data-page="settings">Settings</button>
   <div class="spacer"></div>
@@ -169,18 +169,28 @@
     </div>
   </section>
 
-  <!-- ROSTER -->
+  <!-- ROSTERS -->
   <section class="page" id="page-roster">
-    <h1>Roster</h1>
-    <p class="sub">Who's who. Pick each person's Discord name and in-game account from the lists of names found in your recordings.</p>
+    <h1>Rosters</h1>
+    <p class="sub">Who's who, per roster (Varsity, JV…). Pick each person's Discord name and in-game account from the lists of names found in your recordings.
+      The dashboard shows one roster at a time; each game counts for the roster most of its players are on.</p>
+    <div class="row" style="justify-content:space-between;margin-bottom:12px">
+      <div class="tabs" id="roster-tabs" style="margin:0"></div>
+      <div class="row">
+        <button class="plain" id="add-roster">Add roster</button>
+        <button class="plain" id="rename-roster">Rename</button>
+        <button class="plain" id="delete-roster">Delete roster</button>
+      </div>
+    </div>
     <div class="card">
       <div class="row" style="justify-content:space-between">
-        <h2 style="margin:0">Players</h2>
+        <h2 style="margin:0" id="roster-heading">Players</h2>
         <div class="row"><button class="plain" id="add-player">Add player</button>
           <button class="big" id="save-roster" style="min-width:120px">Save</button><span class="saved" id="roster-saved"></span></div>
       </div>
-      <p class="hint">Keep the same name when someone changes accounts, so their history stays together.
-        A name with an orange outline wasn't found in your recordings: check it, or remove it.</p>
+      <p class="hint">Keep the same name when someone changes accounts, so their history stays together. Someone on two rosters
+        (a sub) can be added to both with the same name. A name with an orange outline wasn't found in your recordings: check it, or remove it.
+        <b>Role</b> decides when their laning phase ends (their lane's first tower); junglers are spotted automatically from Smite.</p>
       <div class="players" id="players" style="margin-top:12px"></div>
     </div>
     <div class="card">
@@ -202,7 +212,16 @@
     <h1>Games</h1>
     <p class="sub">Every recorded game. Spectating can show the game late; set the delay for those games so their events line up with the comms.</p>
     <div class="card">
-      <table><thead><tr><th>When</th><th class="num">Length</th><th class="num">Kills</th><th>Result</th><th>Watched as</th><th>Spectator delay</th></tr></thead>
+      <h2>Spectating? Have a player record too</h2>
+      <p class="hint" style="margin-top:0">League doesn't tell spectators about dragons, barons or heralds, so "item or gold talk before
+        objectives" can't be worked out from a spectator's recording, and a spectator may see the game late. Fix: one of the five
+        players also runs ScrimStats and clicks <b>Start recording</b> (they don't need Craig or the rest). Afterwards they send you the
+        new files from their <b>Game recordings</b> folder, and you add them here. They're joined with yours automatically,
+        and that game then needs no delay.</p>
+      <div class="row" style="margin-top:10px"><button class="plain" id="add-games">Add a player's recordings…</button><span class="saved" id="games-added"></span></div>
+    </div>
+    <div class="card">
+      <table><thead><tr><th>When</th><th class="num">Length</th><th class="num">Kills</th><th class="num">Objectives</th><th>Result</th><th>Recorded by</th><th>Spectator delay</th></tr></thead>
         <tbody id="games"></tbody></table>
       <p class="hint">League's usual spectator delay is 3 minutes. If you can't tell, have a player read out their game clock on Discord while you check yours.</p>
     </div>
@@ -342,9 +361,20 @@ function renderTranscript() {
 $("tr-search").addEventListener("input", renderTranscript);
 $("tr-speaker").addEventListener("change", renderTranscript);
 
-// ---------- roster ----------
-let roster = { players: [], candidates: { discord: [], riot: [] } }, showAllAccounts = false;
-loaders.roster = async () => { roster = await api.roster(); $("roster-saved").textContent = ""; renderRoster(); };
+// ---------- rosters ----------
+// roster.players holds every roster's players: {name, discord: [], riot: [], role, roster}.
+// One person on two rosters has an entry in each, kept in step (same accounts and role).
+const ROLES = ["", "Top", "Jungle", "Mid", "Bot", "Support"];
+let roster = { rosters: [], players: [], candidates: { discord: [], riot: [] } }, showAllAccounts = false, rosterNow = null;
+loaders.roster = async () => {
+  roster = await api.roster();
+  if (!roster.rosters.length) roster.rosters = ["Varsity"];
+  if (!roster.rosters.includes(rosterNow)) rosterNow = roster.rosters[0];
+  $("roster-saved").textContent = "";
+  renderRoster();
+};
+const unsaved = () => { $("roster-saved").textContent = "Not saved yet"; };
+const samePerson = name => roster.players.filter(p => p.name === name);
 function owner(kind, value) {
   const v = value.toLowerCase();
   return roster.players.find(p => p[kind].some(x => x.toLowerCase() === v || (kind === "riot" && x.toLowerCase() === v.split("#")[0])));
@@ -352,33 +382,63 @@ function owner(kind, value) {
 function assign(kind, value, playerName) {
   for (const p of roster.players) p[kind] = p[kind].filter(x => x.toLowerCase() !== value.toLowerCase() &&
     !(kind === "riot" && x.toLowerCase() === value.toLowerCase().split("#")[0]));
-  const p = roster.players.find(p => p.name === playerName);
-  if (p) p[kind].push(value);
-  $("roster-saved").textContent = "Not saved yet";
-  renderRoster();
+  for (const p of samePerson(playerName)) p[kind].push(value);
+  unsaved(); renderRoster();
+}
+function renderRosterTabs() {
+  const tabs = $("roster-tabs"); tabs.replaceChildren();
+  for (const r of roster.rosters) {
+    const n = roster.players.filter(p => p.roster === r).length;
+    tabs.append(el("button", { class: "plain", "aria-pressed": String(r === rosterNow), text: `${r} (${n})`,
+      onclick: () => { rosterNow = r; renderRoster(); } }));
+  }
+  $("roster-heading").textContent = rosterNow + " players";
+  $("delete-roster").disabled = roster.rosters.length < 2;
 }
 function renderRoster() {
+  renderRosterTabs();
   const seen = { discord: new Set(roster.candidates.discord.map(d => d.name.toLowerCase())),
                  riot: new Set(roster.candidates.riot.flatMap(r => [r.riotId.toLowerCase(), r.riotId.toLowerCase().split("#")[0]])) };
   const box = $("players"); box.replaceChildren();
-  if (!roster.players.length) box.append(el("div", { class: "muted", text: "No players yet. Add one, then pick their Discord name and account below." }));
-  roster.players.forEach((p, i) => {
+  const here = roster.players.filter(p => p.roster === rosterNow);
+  if (!here.length) box.append(el("div", { class: "muted", text: "No players on this roster yet. Add one, then pick their Discord name and account below." }));
+  for (const p of here) {
     const name = el("input", { type: "text", value: p.name, "aria-label": "Player name" });
-    name.addEventListener("change", () => { p.name = name.value.trim(); $("roster-saved").textContent = "Not saved yet"; renderRoster(); });
+    name.addEventListener("change", () => {
+      const old = p.name, now = name.value.trim();
+      if (!now) { name.value = old; return; }
+      for (const q of samePerson(old)) q.name = now;          // same person on every roster
+      unsaved(); renderRoster();
+    });
+    const role = el("select", { "aria-label": "Role" });
+    ROLES.forEach(r => role.append(el("option", { value: r, text: r || "— role —" })));
+    role.value = p.role || "";
+    role.addEventListener("change", () => { for (const q of samePerson(p.name)) q.role = role.value; unsaved(); });
+    const others = roster.players.filter(q => q.name === p.name && q.roster !== p.roster).map(q => q.roster);
     const chips = (kind) => el("div", {}, ...p[kind].map(x => el("span", { class: "chip" + (seen[kind].has(x.toLowerCase()) ? "" : " missing"),
       title: seen[kind].has(x.toLowerCase()) ? "" : "Not found in your recordings" }, x,
-      el("button", { "aria-label": "Remove " + x, onclick: () => { p[kind] = p[kind].filter(y => y !== x); $("roster-saved").textContent = "Not saved yet"; renderRoster(); }, text: "×" }))),
+      el("button", { "aria-label": "Remove " + x, onclick: () => { for (const q of samePerson(p.name)) q[kind] = q[kind].filter(y => y !== x); unsaved(); renderRoster(); }, text: "×" }))),
       p[kind].length ? null : el("span", { class: "muted", text: "none yet" }));
     box.append(el("div", { class: "player" },
-      el("div", {}, el("div", { class: "lbl", text: "Name" }), name),
+      el("div", {}, el("div", { class: "lbl", text: "Name" }), name,
+        el("div", { class: "lbl", text: "Role", style: "margin-top:8px" }), role,
+        others.length ? el("div", { class: "muted", style: "margin-top:6px;font-size:12px", text: "Also on " + others.join(", ") }) : null),
       el("div", {}, el("div", { class: "lbl", text: "Discord" }), chips("discord"), el("div", { class: "lbl", text: "Accounts" }), chips("riot")),
-      el("button", { class: "plain", title: "Remove player", "aria-label": "Remove " + p.name, text: "×",
-        onclick: () => { if (confirm(`Remove ${p.name || "this player"}?`)) { roster.players.splice(i, 1); $("roster-saved").textContent = "Not saved yet"; renderRoster(); } } })));
-  });
+      el("button", { class: "plain", title: "Remove from " + rosterNow, "aria-label": "Remove " + p.name, text: "×",
+        onclick: () => { if (confirm(`Remove ${p.name || "this player"} from ${rosterNow}?`)) { roster.players.splice(roster.players.indexOf(p), 1); unsaved(); renderRoster(); } } })));
+  }
+  // "Who is this?" lists this roster's players first, then everyone else's.
   const picker = (kind, value) => {
     const sel = el("select", { "aria-label": "Who is " + value });
-    sel.append(el("option", { value: "", text: kind === "riot" ? "— not on our team —" : "— not on the roster —" }));
-    for (const p of roster.players) if (p.name) sel.append(el("option", { value: p.name, text: p.name }));
+    sel.append(el("option", { value: "", text: kind === "riot" ? "— not on our team —" : "— not on a roster —" }));
+    const names = [...new Set(here.map(p => p.name).filter(Boolean))];
+    names.forEach(n => sel.append(el("option", { value: n, text: n })));
+    const rest = [...new Set(roster.players.filter(p => p.name && !names.includes(p.name)).map(p => p.name))];
+    if (rest.length) {
+      const og = el("optgroup", { label: "Other rosters" });
+      rest.forEach(n => og.append(el("option", { value: n, text: `${n} (${roster.players.find(p => p.name === n).roster})` })));
+      sel.append(og);
+    }
     const o = owner(kind, value); sel.value = o ? o.name : "";
     sel.addEventListener("change", () => assign(kind, value, sel.value));
     return sel;
@@ -397,13 +457,40 @@ function renderRoster() {
 }
 $("more-accounts").addEventListener("click", () => { showAllAccounts = true; renderRoster(); });
 $("add-player").addEventListener("click", () => {
-  const name = prompt("Player's name (whatever you want to see on the dashboard):");
+  const name = prompt(`Add a player to ${rosterNow}. Their name (whatever you want to see on the dashboard; use the same name as on another roster for a sub):`);
   if (!name || !name.trim()) return;
-  roster.players.push({ name: name.trim(), discord: [], riot: [] });
-  $("roster-saved").textContent = "Not saved yet"; renderRoster();
+  const n = name.trim();
+  if (roster.players.some(p => p.name === n && p.roster === rosterNow)) { alert(`${n} is already on ${rosterNow}.`); return; }
+  const twin = roster.players.find(p => p.name === n);     // the same person, on another roster
+  roster.players.push({ name: n, roster: rosterNow, role: twin ? twin.role : "",
+                        discord: twin ? [...twin.discord] : [], riot: twin ? [...twin.riot] : [] });
+  unsaved(); renderRoster();
+});
+$("add-roster").addEventListener("click", () => {
+  const name = prompt("New roster's name (for example JV):");
+  if (!name || !name.trim()) return;
+  const n = name.trim().replace(/[\[\]]/g, "");
+  if (roster.rosters.includes(n)) { rosterNow = n; renderRoster(); return; }
+  roster.rosters.push(n); rosterNow = n; unsaved(); renderRoster();
+});
+$("rename-roster").addEventListener("click", () => {
+  const name = prompt(`Rename ${rosterNow} to:`, rosterNow);
+  if (!name || !name.trim() || name.trim() === rosterNow) return;
+  const n = name.trim().replace(/[\[\]]/g, "");
+  if (roster.rosters.includes(n)) { alert(`There's already a roster called ${n}.`); return; }
+  roster.rosters[roster.rosters.indexOf(rosterNow)] = n;
+  roster.players.forEach(p => { if (p.roster === rosterNow) p.roster = n; });
+  rosterNow = n; unsaved(); renderRoster();
+});
+$("delete-roster").addEventListener("click", () => {
+  const n = roster.players.filter(p => p.roster === rosterNow).length;
+  if (!confirm(`Delete the ${rosterNow} roster${n ? ` and its ${n} player${n === 1 ? "" : "s"}` : ""}? Their recordings are kept.`)) return;
+  roster.players = roster.players.filter(p => p.roster !== rosterNow);
+  roster.rosters = roster.rosters.filter(r => r !== rosterNow);
+  rosterNow = roster.rosters[0]; unsaved(); renderRoster();
 });
 $("save-roster").addEventListener("click", async () => {
-  await api.save_roster(roster.players.filter(p => p.name));
+  await api.save_roster(roster.rosters, roster.players.filter(p => p.name));
   $("roster-saved").textContent = "Saved ✓";
 });
 
@@ -411,7 +498,7 @@ $("save-roster").addEventListener("click", async () => {
 loaders.games = async () => {
   const games = await api.games();
   const body = $("games"); body.replaceChildren();
-  if (!games.length) { body.append(el("tr", {}, el("td", { colspan: "6", class: "muted", text: "No recorded games yet." }))); return; }
+  if (!games.length) { body.append(el("tr", {}, el("td", { colspan: "7", class: "muted", text: "No recorded games yet." }))); return; }
   for (const g of games) {
     const sel = el("select", { "aria-label": "Spectator delay" });
     for (const [v, t] of [[0, "None"], [180, "3 min (usual)"], [-1, "Other…"]]) sel.append(el("option", { value: v, text: t }));
@@ -425,15 +512,24 @@ loaders.games = async () => {
     custom.addEventListener("change", () => save(Math.max(0, +custom.value || 0)));
     body.append(el("tr", {},
       el("td", {}, el("div", { text: fmtTime(g.start) }),
-        el("div", { class: "muted", text: g.our_players.length ? g.our_players.join(", ") : g.champions.slice(0, 10).join(", ") })),
+        el("div", { class: "muted", text: g.our_players.length ? (g.roster ? g.roster + ": " : "") + g.our_players.join(", ") : g.champions.slice(0, 10).join(", ") })),
       el("td", { class: "num", text: fmtLen(g.end - g.start) }),
       el("td", { class: "num", text: g.kills }),
+      el("td", { class: "num", text: g.spectator && !g.player_view ? "not shown" : g.objectives }),
       el("td", { text: g.result || "–" }),
-      el("td", {}, g.spectator ? el("span", { class: "badge warn", text: "Spectator" }) : el("span", { class: "badge", text: "Player" }),
-        g.pieces > 1 ? el("div", { class: "muted", text: `rejoined from ${g.pieces} pieces` }) : null),
-      el("td", {}, g.spectator ? el("div", { class: "row" }, sel, custom, saved) : el("span", { class: "muted", text: "—" }))));
+      el("td", {}, g.player_view ? el("span", { class: "badge", text: "Spectator + player" })
+          : g.spectator ? el("span", { class: "badge warn", text: "Spectator" }) : el("span", { class: "badge", text: "Player" }),
+        g.pieces > 1 ? el("div", { class: "muted", text: `joined from ${g.pieces} files` }) : null),
+      el("td", {}, g.spectator && !g.player_view ? el("div", { class: "row" }, sel, custom, saved)
+          : el("span", { class: "muted", text: g.player_view ? "not needed" : "—" }))));
   }
 };
+
+$("add-games").addEventListener("click", async () => {
+  const n = await api.add_games();
+  $("games-added").textContent = n ? `Added ${n} file${n === 1 ? "" : "s"} ✓` : "";
+  if (n) loaders.games();
+});
 
 // ---------- settings ----------
 let settings = {}, current = null;

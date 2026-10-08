@@ -20,6 +20,9 @@ zayen => Zaahen
 zahen => Zaahen
 b.o.r.k. => BotRK
 k santa => K'Sante
+ltr => LDR
+lord dominic's => Lord Dominik's
+dominic's regards => Dominik's Regards
 
 # --- Translations of Chinese gaming slang ---
 my pot => my bad

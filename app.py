@@ -6,8 +6,10 @@ built into Windows) with everything in it:
   Home         record games, transcribe comms, activity log
   Dashboard    the stats, inside the app
   Transcripts  read and search who said what
-  Roster       who's who, picked from the names found in your recordings
-  Games        recorded games; set the spectator delay where needed
+  Rosters      who's who per roster (Varsity, JV...), picked from the names
+               found in your recordings
+  Games        recorded games; set the spectator delay where needed, add a
+               player's recordings of spectated games
   Settings     the word lists, edited in the app
 
 The page talks to the Api class below. Heavy work runs in background
@@ -84,7 +86,8 @@ def graphics_card_ready():
 
 SETTINGS_FILES = {
     "callouts": ("Callout types", "Which phrases count as shotcalling, enemy info, my status, item timers, "
-                 "timers, positive, frustration and accountability. One type per line: Type: phrase, phrase."),
+                 "timers, resources, vision, positive, flame and accountability. "
+                 "One type per line: Type: phrase, phrase."),
     "league_words": ("League words", "Words the speech model listens for, most important first. "
                      "One per line. Chinese words have their own space, separate from English."),
     "nicknames": ("Champion nicknames", "What people call champions. One per line: Official Name: nickname, nickname."),
@@ -254,13 +257,14 @@ class Api:
 
     def roster(self):
         import analytics
-        return {"players": analytics.load_roster(self._paths.roster) if self._paths.roster.exists() else [],
-                "candidates": analytics.roster_candidates(self._paths)}
+        data = (analytics.load_rosters(self._paths.roster) if self._paths.roster.exists()
+                else {"rosters": [], "players": []})
+        return {**data, "candidates": analytics.roster_candidates(self._paths)}
 
-    def save_roster(self, players):
+    def save_roster(self, rosters, players):
         import analytics
-        analytics.save_roster(self._paths, players)
-        self._log(f"Roster saved ({len(players)} players).")
+        analytics.save_roster(self._paths, rosters, players)
+        self._log(f"Rosters saved ({', '.join(rosters)}).")
         return True
 
     # ----- games -----
@@ -268,6 +272,33 @@ class Api:
     def games(self):
         import analytics
         return analytics.game_list(self._paths)
+
+    def add_games(self):
+        """A teammate's game recordings (they played; you spectated), copied
+        into Game recordings. Same-named files get a new name, never replaced."""
+        import webview
+        files = self._window.create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=True, directory=str(Path.home() / "Downloads"),
+            file_types=("Game recordings (*.jsonl)", "All files (*.*)"))
+        added = 0
+        for name in files or []:
+            source = Path(name)
+            if source.suffix.lower() != ".jsonl" or not source.name.startswith("game_"):
+                self._log(f"Skipped {source.name}: not a ScrimStats game recording.")
+                continue
+            target = self._paths.games / source.name
+            if target.exists() and target.read_bytes() == source.read_bytes():
+                self._log(f"{source.name} is already in Game recordings.")
+                continue
+            n = 2
+            while target.exists():
+                target = self._paths.games / f"{source.stem}_from_player_{n}.jsonl"
+                n += 1
+            shutil.copy2(source, target)
+            added += 1
+        if added:
+            self._log(f"Added {added} game recording(s). They're joined with the matching spectated games.")
+        return added
 
     def set_delay(self, game_id, seconds):
         import analytics

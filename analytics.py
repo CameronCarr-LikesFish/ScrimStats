@@ -13,13 +13,24 @@ How comms are sorted (phrase lists in Settings\\Callout types.txt):
     My status     about yourself ("I don't have flash", "I need to back")
     Item timers   your items ("I'll have IE for drake", "I won't have item")
     Timers        when things come up ("drag in 40")
-  Positive, Accountability, and Frustration, where frustration only counts
-  against someone when it's aimed at a teammate ("what are you doing"),
-  not at themselves ("fuck this, I'm so bad").
+  RESOURCES     asking for gold, farm, waves, camps ("I need gold for this")
+  VISION        three kinds: warding ("I warded tri"), asking for vision
+                ("we have no vision", "buy pinks") and sweeping ("I swept it")
+  Positive, Accountability, and Flame: blaming or insulting phrases aimed at
+  a teammate ("what are you doing", "you're so useless"). Swearing and
+  frustration on their own ("fuck this", "I'm so bad") aren't flame.
 
 Who a sentence is about is judged from its words: "I / my / me" = yourself,
 "you / your" or a teammate's name = a teammate, "he / she / they" or a
 champion name = the enemy. It's a rule of thumb, not understanding.
+
+Every game is split into three parts, per player, so each stat can be seen
+for the laning phase and later:
+  Early   until the first outer tower in that player's lane falls (either
+          team's), at most 20:00. Junglers: the first outer tower anywhere.
+          Lane comes from the Role on the roster (no role = bot lane).
+  Mid     from then until 30:00, or until the first inhibitor falls.
+  Late    the rest.
 """
 
 import bisect
@@ -31,20 +42,28 @@ import webbrowser
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
-from common import VERSION, bundled
+from common import VERSION, SeenEvents, bundled
 
 FIGHT_GAP_S = 15          # kills this close together belong to one fight
 FIGHT_MIN_KILLS = 3       # ...and it takes this many to be a teamfight
 FIGHT_LEAD_S = 10         # fight comms window: 10 s before the first kill
 FIGHT_TAIL_S = 5          # ...to 5 s after the last
 BLAME_WINDOW_S = 20       # "right after dying" = within 20 s
-OBJECTIVE_SETUP_S = 90    # item calls "before an objective" = within 90 s before
+OBJECTIVE_SETUP_S = 150   # item/gold talk "before an objective" = within 2½ min before
 TALK_OVER_GRACE_S = 0.3   # ignore overlaps shorter than this
 OBJECTIVE_EVENTS = ("Dragon", "Baron", "Herald", "Horde", "Atakhan", "Elder")
+EARLY_GAME_MAX_S = 20 * 60   # laning phase ends by 20:00 even if no tower has fallen
+LATE_GAME_FROM_S = 30 * 60   # late game from 30:00 (or the first inhibitor)
+PHASES = ("early", "mid", "late")
 
 INFO_KINDS = ["Enemy info", "My status", "Item timers", "Timers"]
-AT_TEAMMATES = "Frustration at teammates"
-AT_SELF = "Frustration at self"
+VISION_KINDS = ["Warding", "Vision requests", "Sweeping"]
+AT_TEAMMATES = "Flame at teammates"
+AT_SELF = "Frustration"     # not aimed at anyone; not scored
+FLAME_REACH = 5             # "you" / a teammate's name within this many words of a flame phrase
+DEFAULT_ROSTER = "Team"
+ROLES = ("Top", "Jungle", "Mid", "Bot", "Support")
+LANE_OF_ROLE = {"top": "top", "jungle": "any", "mid": "mid", "bot": "bot", "support": "bot"}
 
 FIRST_PERSON = {"i", "i'm", "im", "i'll", "i've", "i'd", "my", "me", "mine", "myself"}
 SECOND_PERSON = {"you", "you're", "youre", "your", "yours", "u", "ur", "y'all", "yall",
@@ -55,7 +74,8 @@ NOT_REALLY_ITEMS = ("ward", "potion", "trinket", "elixir", "lens", "totem", "coo
 
 COUNT_FIELDS = ["minutes", "talk_s", "team_talk_s", "words", "fights", "fights_spoke",
                 "fight_words", "deaths", "deaths_blamed", "talk_overs", "objectives",
-                "objectives_itemcall", "team_shotcalls", "talk_zh_s"]
+                "objectives_itemcall", "team_shotcalls", "talk_zh_s", "plays",
+                "vision", "vision_minutes"]
 
 
 # ---------------------------------------------------------------------------
@@ -123,35 +143,58 @@ class PhraseMatcher:
 # Roster and classification
 # ---------------------------------------------------------------------------
 
-def load_roster(path):
-    """Roster.txt lines:  Name | discord1, discord2 | Riot#ID, Alt#ID"""
-    players = []
+def load_rosters(path):
+    """Roster.txt: a [Roster name] line starts each roster (Varsity, JV...),
+    then one line per player:  Name | discord1, discord2 | Riot#ID, Alt#ID | Role
+    Lines before any [name] belong to a roster called "Team" (older files).
+    Someone on two rosters is listed in both.
+    Returns {"rosters": [names in order], "players": [{name, discord, riot, role, roster}]}."""
+    rosters, players, current = [], [], None
     for line in read_list_file(path):
+        if line.startswith("[") and line.endswith("]"):
+            current = line[1:-1].strip() or DEFAULT_ROSTER
+            if current not in rosters:
+                rosters.append(current)
+            continue
         parts = [p.strip() for p in line.split("|")]
         if not parts[0]:
             continue
+        if current is None:
+            current = DEFAULT_ROSTER
+            rosters.append(current)
         split = lambda i: [x.strip() for x in parts[i].split(",") if x.strip()] if len(parts) > i else []
-        players.append({"name": parts[0], "discord": split(1), "riot": split(2)})
-    return players
+        role = parts[3].title() if len(parts) > 3 and parts[3].title() in ROLES else ""
+        players.append({"name": parts[0], "discord": split(1), "riot": split(2),
+                        "role": role, "roster": current})
+    return {"rosters": rosters, "players": players}
+
+
+def load_roster(path):
+    """Every player on every roster (one entry per roster they're on)."""
+    return load_rosters(path)["players"]
 
 
 def write_roster_template(path, discord_names, riot_counts):
     lines = [
-        "# Your team's roster. One line per person:",
+        "# Your team's rosters. A [Name] line starts each roster, then one",
+        "# line per person:",
         "#",
-        "#     Name | Discord username(s) | Riot ID(s)",
+        "#     Name | Discord username(s) | Riot ID(s) | Role",
         "#",
         "# - Name: whatever you want to see on the dashboard.",
         "# - Discord username: as in Craig's audio file names",
         "#   (\"1-alex.flac\" -> alex). Several? Separate with commas.",
         "# - Riot ID: in-game name with tag, e.g. MidDiff#NA1. Add alt",
         "#   accounts with commas. Needed for the fight, death and objective stats.",
+        "# - Role: Top, Jungle, Mid, Bot or Support (decides when their laning",
+        "#   phase ends). Can be left empty.",
         "# - Coaches and subs can be listed too (Riot ID can be left empty).",
         "# - Keep the same Name when someone changes accounts, so their history",
         "#   stays together.",
         "#",
-        "# Example (delete the # at the start of a line to use it):",
-        "# Alex | alex | MidDiff#NA1",
+        "# Example (delete the # at the start of the lines to use them):",
+        "# [Varsity]",
+        "# Alex | alex | MidDiff#NA1 | Mid",
         "#",
         "# Found in your recordings so far:",
         "#   Discord names: " + (", ".join(sorted(discord_names)) or "(none yet)"),
@@ -237,6 +280,9 @@ class Classifier:
                                    key=len, reverse=True)
         self.teammates = PhraseMatcher([n for n in teammate_names if n])
         self.teammates_raw = [n.lower() for n in teammate_names if n]
+        # Older settings files have no Flame line: their Frustration phrases
+        # are used for flame instead.
+        self.flame = "Flame" if "Flame" in categories else "Frustration"
 
     @staticmethod
     def near_me(words, span, me_positions):
@@ -246,7 +292,8 @@ class Classifier:
     def english_kinds(self, text):
         words = plain_words(text).split()
         me_positions = [i for i, w in enumerate(words) if w in FIRST_PERSON]
-        you = bool(set(words) & SECOND_PERSON) or bool(self.teammates.spans(words))
+        you_positions = ([i for i, w in enumerate(words) if w in SECOND_PERSON]
+                         + [i for a, b in self.teammates.spans(words) for i in range(a, b)])
         them = bool(set(words) & THIRD_PERSON) or bool(self.champions.spans(words))
         found = set()
         for name, matcher in self.matchers.items():
@@ -257,8 +304,19 @@ class Classifier:
                 spans = [s for s in spans if self.near_me(words, s, me_positions)]
             if name == "Enemy info" and me_positions and not them:
                 spans = []          # "I have no flash" is my status, not enemy info
-            if spans:
-                found.add((AT_TEAMMATES if you else AT_SELF) if name == "Frustration" else name)
+            if not spans:
+                continue
+            if name == self.flame:
+                # Flame is aimed at someone: "you" or a teammate's name close by.
+                # "Holy shit, you live?" or "I'm not stupid, you know" aren't flame.
+                if any(a - FLAME_REACH <= p < b + FLAME_REACH for a, b in spans for p in you_positions):
+                    found.add(AT_TEAMMATES)
+                elif name == "Frustration":
+                    found.add(AT_SELF)
+            elif name == "Frustration":
+                found.add(AT_SELF)
+            else:
+                found.add(name)
         return found
 
     def chinese_kinds(self, text):
@@ -267,7 +325,12 @@ class Classifier:
         text = text.lower()          # so mixed lines match ("没有Flash" = "没有flash")
         me_positions = [m.start() for m in ZH_ME.finditer(text)]
         lowered = text
-        you = bool(ZH_YOU.search(text)) or any(n in lowered for n in self.teammates_raw)
+        you_positions = [m.start() for m in ZH_YOU.finditer(text)]
+        for n in self.teammates_raw:
+            start = lowered.find(n)
+            while start >= 0:
+                you_positions.append(start)
+                start = lowered.find(n, start + 1)
         them = (bool(ZH_THEM.search(text)) or any(c in text for c in self.champions_zh)
                 or bool(self.champions.spans(plain_words(text).split())))
         found = set()
@@ -285,17 +348,37 @@ class Classifier:
                         if any(h[0] - SELF_REACH_ZH <= p < h[1] + SELF_REACH_ZH for p in me_positions)]
             if name == "Enemy info" and me_positions and not them:
                 hits = []
-            if hits:
-                found.add((AT_TEAMMATES if you else AT_SELF) if name == "Frustration" else name)
+            if not hits:
+                continue
+            if name == self.flame:
+                if any(h[0] - SELF_REACH_ZH <= p < h[1] + SELF_REACH_ZH for h in hits for p in you_positions):
+                    found.add(AT_TEAMMATES)
+                elif name == "Frustration":
+                    found.add(AT_SELF)
+            elif name == "Frustration":
+                found.add(AT_SELF)
+            else:
+                found.add(name)
         return found
 
+    fix = None   # Corrections.txt, applied to every line (set in build())
+
     def classify(self, text, text_en=None):
+        if self.fix:
+            # So a correction added today also fixes older transcripts' stats.
+            text, text_en = self.fix(text), (self.fix(text_en) if text_en else text_en)
         found = self.english_kinds(text_en or text)
         if has_chinese(text):
             found |= self.chinese_kinds(text)
         if AT_TEAMMATES in found:
             found.discard(AT_SELF)
             found.discard("Shotcalling")   # "why did you go in" is blame, not a call
+        # "Buy pinks" / "I swept it" mention wards too, but the more specific
+        # kind is what they are; plain ward talk is Warding.
+        if found & {"Vision requests", "Sweeping"}:
+            found.discard("Warding")
+        if found & set(VISION_KINDS):
+            found.add("Vision talk")
         return Counter({name: 1 for name in found})
 
 
@@ -335,12 +418,10 @@ def live_timeline(observations):
     return real_time
 
 
-def event_key(event):
-    """What makes an event the same event (a spectator rewind replays events
-    with new IDs): its type, game time, and who was involved."""
-    return (event.get("EventName"), round(float(event.get("EventTime") or 0), 1),
-            event.get("KillerName"), event.get("VictimName"), event.get("DragonType"),
-            event.get("TurretKilled"), event.get("InhibKilled"), event.get("Acer"))
+def player_id(p):
+    """A player's account name as the recorder saves it ("#" = no Riot ID)."""
+    riot = p.get("riotId") or ""
+    return riot if riot not in ("", "#") else (p.get("summonerName") or "")
 
 
 def player_signature(players):
@@ -348,36 +429,46 @@ def player_signature(players):
                         for p in players if isinstance(p, dict)))
 
 
+def clock_went_back(observations):
+    clock = [gt for gt, _ in sorted(observations, key=lambda o: o[1])]
+    return any(later < earlier - 10 for earlier, later in zip(clock, clock[1:]))
+
+
 def read_game_file(path):
     records = read_jsonl(path)
-    walls, observations, players, raw_events, spectator = [], [], [], [], False
-    previous = None
+    walls, observations, players, raw_events, scores = [], [], [], [], []
+    spectator, as_player = False, False
     for r in records:
         stamp = r.get("wall_clock") or r.get("started_at")
         if stamp:
             walls.append(parse_iso(stamp))
         if r.get("wall_clock") and r.get("game_time") is not None and r.get("type") in ("clock_sync", "event"):
             observations.append((float(r["game_time"]), parse_iso(r["wall_clock"])))
-        if r.get("type") == "clock_sync" and r.get("game_time") is not None:
-            if previous is not None and r["game_time"] < previous - 10:
-                spectator = True               # the clock went back: a spectator rewind
-            previous = r["game_time"]
-        elif r.get("type") == "players":
+        if r.get("type") == "players":
             players = r.get("players", [])
             spectator = spectator or bool(r.get("spectator"))
+            # Only newer recordings say so outright; older ones are "unknown".
+            as_player = r.get("spectator") is False
+        elif r.get("type") == "scores" and r.get("game_time") is not None:
+            scores.append((float(r["game_time"]), {str(p.get("id") or "").lower(): p.get("vision")
+                                                   for p in r.get("players", []) if p.get("id")}))
         elif r.get("type") == "event":
             raw_events.append(r)
     if not walls:
         return None
+    if clock_went_back(observations):
+        spectator, as_player = True, False       # the clock went back: a spectator rewind
     return {"file": path.name, "start": min(walls), "end": max(walls), "players": players,
             "signature": player_signature(players), "observations": observations,
-            "raw_events": raw_events, "spectator": spectator}
+            "raw_events": raw_events, "scores": scores, "spectator": spectator,
+            "as_player": as_player}
 
 
 def load_games(paths_list, delays=None):
     """Read every game recording, merge pieces of the same game (older
-    versions split a spectated game at every rewind), drop repeated events,
-    and put every event on the real-world clock."""
+    versions split a spectated game at every rewind; a teammate's recording
+    of the same game can be added too), drop repeated events, and put every
+    event on the real-world clock."""
     pieces = sorted((g for g in (read_game_file(p) for p in paths_list) if g), key=lambda g: g["start"])
     merged = []
     for piece in pieces:
@@ -386,35 +477,50 @@ def load_games(paths_list, delays=None):
                 and piece["start"] - last["end"] < SAME_GAME_GAP_S):
             last["files"].append(piece["file"])
             last["end"] = max(last["end"], piece["end"])
-            last["observations"] += piece["observations"]
-            last["raw_events"] += piece["raw_events"]
-            last["spectator"] = last["spectator"] or piece["spectator"]
+            last["pieces"].append(piece)
         else:
-            merged.append({**piece, "files": [piece["file"]]})
+            merged.append({**piece, "files": [piece["file"]], "pieces": [piece]})
     games = []
     for g in merged:
-        # The game clock going backwards anywhere means a spectator rewound.
-        clock = [gt for gt, _ in sorted(g["observations"], key=lambda o: o[1])]
-        if any(later < earlier - 10 for earlier, later in zip(clock, clock[1:])):
-            g["spectator"] = True
-        real_time = live_timeline(g["observations"])
+        parts = g["pieces"]
+        observations = [o for p in parts for o in p["observations"]]
+        spectator = any(p["spectator"] for p in parts) or clock_went_back(observations)
+        # A player's own recording of a spectated game is live: no spectator
+        # delay, and it has the dragons and barons (the spectator feed doesn't).
+        live_parts = [p for p in parts if p["as_player"]]
+        player_view = spectator and bool(live_parts)
+        if player_view:
+            observations = [o for p in live_parts for o in p["observations"]]
+        real_time = live_timeline(observations)
         # A spectator delay set in the app (Games tab) for this game, if any.
-        delay = float((delays or {}).get(g["files"][0], SPECTATOR_DELAY_S if g["spectator"] else 0.0))
-        events, seen, result = [], set(), None
-        for r in sorted(g["raw_events"], key=lambda r: parse_iso(r["wall_clock"])):
-            key = event_key(r)
-            if key in seen:
+        delay = 0.0 if player_view else float(
+            (delays or {}).get(g["files"][0], SPECTATOR_DELAY_S if spectator else 0.0))
+
+        def to_wall(game_seconds, real_time=real_time, delay=delay, start=g["start"]):
+            """Game clock -> real-world time this moment was heard on Discord."""
+            real = real_time(game_seconds)
+            return (real if real is not None else start + game_seconds) - delay
+
+        events, seen, result = [], SeenEvents(), None
+        raw = [r for p in parts for r in p["raw_events"]]
+        for r in sorted(raw, key=lambda r: parse_iso(r["wall_clock"])):
+            if seen.is_repeat(r):
                 continue
-            seen.add(key)
-            wall = real_time(r.get("EventTime")) if r.get("EventTime") is not None else parse_iso(r["wall_clock"])
-            events.append({**r, "wall": wall - delay})
+            wall = (to_wall(float(r["EventTime"])) if r.get("EventTime") is not None
+                    else parse_iso(r["wall_clock"]) - delay)
+            events.append({**r, "wall": wall})
             if r.get("EventName") == "GameEnd":
                 result = r.get("Result")
-        starts = [e["wall"] for e in events if e.get("EventName") == "GameStart"]
+        # The game ran from game clock 0 to the furthest moment anyone saw.
+        # (A spectator who keeps rewinding after the end doesn't make it longer.)
+        last_moment = max((gt for gt, _ in observations), default=0.0)
         games.append({"file": g["files"][0], "files": g["files"], "delay": delay,
-                      "start": (min(starts) if starts else g["start"]) - 0,
-                      "end": g["end"], "players": g["players"], "events": events,
-                      "result": result, "spectator": g["spectator"]})
+                      "start": to_wall(0.0) if observations else g["start"],
+                      "end": to_wall(last_moment) if observations else g["end"],
+                      "players": g["players"], "events": events,
+                      "result": result, "spectator": spectator, "player_view": player_view,
+                      "to_wall": to_wall, "max_game_time": last_moment,
+                      "scores": sorted(s for p in parts for s in p["scores"])})
     return games
 
 
@@ -431,7 +537,9 @@ def name_lookup(game_players):
     return lookup
 
 
-def teamfight_windows(game):
+def kill_clusters(game):
+    """Kills close together, as fights. Returns (teamfights as comms windows,
+    start times of every fight of any size: the "plays")."""
     kills = sorted(e["wall"] for e in game["events"] if e.get("EventName") == "ChampionKill")
     clusters = []
     for k in kills:
@@ -439,20 +547,119 @@ def teamfight_windows(game):
             clusters[-1].append(k)
         else:
             clusters.append([k])
-    return [(c[0] - FIGHT_LEAD_S, c[-1] + FIGHT_TAIL_S)
-            for c in clusters if len(c) >= FIGHT_MIN_KILLS]
+    teamfights = [(c[0] - FIGHT_LEAD_S, c[-1] + FIGHT_TAIL_S)
+                  for c in clusters if len(c) >= FIGHT_MIN_KILLS]
+    return teamfights, [c[0] for c in clusters]
+
+
+# ---------------------------------------------------------------------------
+# Early / mid / late game
+# ---------------------------------------------------------------------------
+
+TURRET_NEW = re.compile(r"Turret_T(Order|Chaos)_L(\d)_P(\d)", re.I)
+TURRET_OLD = re.compile(r"Turret_T([12])_([LCR])_(\d+)", re.I)
+# Lane numbers in the newer tower names. Worked out from recorded games:
+# top laners took the L2 towers and bot laners the L0 ones, and the two
+# nexus towers are L1 (mid). P3 is the outer tower.
+NEW_LANES = {"0": "bot", "1": "mid", "2": "top"}
+OLD_LANES = {"L": "top", "C": "mid", "R": "bot"}
+
+
+def turret_lane(name):
+    """(lane, is it the lane's outer tower?) from a tower's name."""
+    m = TURRET_NEW.search(name or "")
+    if m:
+        return NEW_LANES.get(m.group(2)), m.group(3) == "3"
+    m = TURRET_OLD.search(name or "")
+    if m:
+        lane = OLD_LANES[m.group(2).upper()]
+        return lane, int(m.group(3)) == (5 if lane == "mid" else 3)
+    return None, False
+
+
+def phase_times(game):
+    """When the game moves on, in game seconds: early_end(lane) and late."""
+    outer, inhib = {}, None
+    for e in game["events"]:
+        if e.get("EventTime") is None:
+            continue
+        t = float(e["EventTime"])
+        if e.get("EventName") == "TurretKilled":
+            lane, is_outer = turret_lane(e.get("TurretKilled"))
+            if lane and is_outer:
+                outer[lane] = min(outer.get(lane, t), t)
+        elif e.get("EventName") == "InhibKilled":
+            inhib = t if inhib is None else min(inhib, t)
+    late = min(LATE_GAME_FROM_S, inhib if inhib is not None else LATE_GAME_FROM_S)
+
+    def early_end(lane):
+        t = (min(outer.values(), default=EARLY_GAME_MAX_S) if lane == "any"
+             else outer.get(lane, EARLY_GAME_MAX_S))
+        return min(t, EARLY_GAME_MAX_S, late)
+    return early_end, late
+
+
+def lane_of(role, entry):
+    """Which lane's towers end someone's laning phase. Smite = jungler."""
+    if any("smite" in str(s).lower() for s in (entry or {}).get("spells") or []):
+        return "any"
+    return LANE_OF_ROLE.get((role or "").lower(), "bot")
+
+
+def to_game_time(game, wall):
+    """Real-world time -> game clock (the reverse of game["to_wall"])."""
+    lo, hi = 0.0, game["max_game_time"] + 3600
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if game["to_wall"](mid) < wall:
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+
+def vision_between(game, entry, g0, g1):
+    """How much vision score a player added between two game-clock times,
+    from the recorder's 30-second snapshots. None if there are none."""
+    if not entry or not game["scores"]:
+        return None
+    key = player_id(entry).lower()
+    points = sorted([(0.0, 0.0)] + [(gt, float(v[key])) for gt, v in game["scores"]
+                                    if v.get(key) is not None])
+    if len(points) == 1:
+        return None
+    times = [p[0] for p in points]
+
+    def at(g):
+        i = bisect.bisect_right(times, g)
+        if i >= len(points):
+            return points[-1][1]
+        (ga, va), (gb, vb) = points[i - 1], points[i]
+        return va + (vb - va) * (g - ga) / (gb - ga) if gb > ga else vb
+    return max(0.0, at(g1) - at(g0))
 
 
 class Roster:
-    def __init__(self, players):
+    def __init__(self, players, roster_names=None):
         self.players = players
+        self.names = list(dict.fromkeys(p["name"] for p in players))   # each person once
+        self.roster_names = roster_names or list(dict.fromkeys(p["roster"] for p in players))
         self.by_discord = {d.lower(): p["name"] for p in players for d in p["discord"]}
         self.by_riot = {}
+        self.roles, self.rosters_of = {}, defaultdict(set)
         for p in players:
             for rid in p["riot"]:
                 self.by_riot[rid.lower()] = p["name"]
                 self.by_riot.setdefault(rid.split("#")[0].strip().lower(), p["name"])
+            if p.get("role"):
+                self.roles.setdefault(p["name"], p["role"])
+            self.rosters_of[p["name"]].add(p.get("roster") or DEFAULT_ROSTER)
         self.empty = not players
+
+    @classmethod
+    def load(cls, path):
+        data = load_rosters(path)
+        return cls(data["players"], data["rosters"])
 
     def speaker(self, discord_name):
         return discord_name if self.empty else self.by_discord.get(discord_name.lower())
@@ -463,6 +670,18 @@ class Roster:
                 if variant and variant.lower() in self.by_riot:
                     return self.by_riot[variant.lower()]
         return None
+
+    def role(self, name):
+        return self.roles.get(name, "")
+
+    def team_of(self, present):
+        """Which roster played: the one with the most of these people on it."""
+        best, best_count = None, 0
+        for r in self.roster_names:
+            count = sum(1 for name in present if r in self.rosters_of.get(name, ()))
+            if count > best_count:
+                best, best_count = r, count
+        return best
 
 
 # ---------------------------------------------------------------------------
@@ -475,10 +694,10 @@ def analyze_session(path, games, roster, classifier, warnings):
     utterances = [r for r in records if r.get("type") == "utterance"]
     if not meta:
         warnings.append(f"{path.name}: no meta line; skipped.")
-        return [], set()
+        return [], set(), [], []
     start = meta.get("audio_start_t") or (utterances[0]["t"] if utterances else None)
     if start is None:
-        return [], set()
+        return [], set(), [], []
     track_lengths = [t.get("duration_s") or 0 for t in meta.get("tracks", [])]
     end = max([start + max(track_lengths, default=0)] + [u["t_end"] for u in utterances])
     session_id = meta.get("craig_recording_id", path.stem)
@@ -491,6 +710,12 @@ def analyze_session(path, games, roster, classifier, warnings):
             unmapped.add(u["speaker"])
         u["counts"] = classifier.classify(u["text"], u.get("text_en"))
         u["n_words"] = word_count(u["text"])
+    # Who started talking while someone else was mid-sentence.
+    ordered = sorted(utterances, key=lambda u: u["t"])
+    for i, u in enumerate(ordered):
+        u["over"] = any(other["speaker"] != u["speaker"]
+                        and other["t"] < u["t"] < other["t_end"] - TALK_OVER_GRACE_S
+                        for other in ordered[max(0, i - 20):i])
     track_players = {roster.speaker(t["speaker"]) for t in meta.get("tracks", [])} - {None}
 
     in_session = sorted((g for g in games if g["start"] < end and g["end"] > start),
@@ -502,23 +727,25 @@ def analyze_session(path, games, roster, classifier, warnings):
         warnings.append(f"Session {date} ({session_id}): no recorded games found, so all "
                         "speech counts and fight/death/objective stats are missing.")
 
-    rows = []
+    base = {"session": session_id, "date": date.isoformat(),
+            "week": (date - timedelta(days=date.weekday())).isoformat(),
+            "month": date.strftime("%Y-%m")}
+    rows, played = [], []
     for w0, w1, game, number in segments:
-        minutes = (w1 - w0) / 60
-        if minutes <= 0:
+        if w1 <= w0:
             continue
-        window = [u for u in utterances if w0 <= u["t"] < w1]
-        team_talk = sum(u["t_end"] - u["t"] for u in window)
-        team_shotcalls = sum(u["counts"].get("Shotcalling", 0) for u in window)
+        segment = [u for u in utterances if w0 <= u["t"] < w1]
         present = set(track_players)
-        fights, deaths, objectives = [], defaultdict(list), []
+        entries = {}
+        fights, plays, deaths, objectives = [], [], defaultdict(list), []
         if game:
-            fights = teamfight_windows(game)
+            fights, plays = kill_clusters(game)
             lookup = name_lookup(game["players"])
             for entry in game["players"]:
                 name = roster.game_player(entry)
                 if name:
                     present.add(name)
+                    entries.setdefault(name, entry)
             for e in game["events"]:
                 kind = str(e.get("EventName", ""))
                 if kind == "ChampionKill":
@@ -528,54 +755,98 @@ def analyze_session(path, games, roster, classifier, warnings):
                         deaths[name].append(e["wall"])
                 elif kind.endswith("Kill") and any(o in kind for o in OBJECTIVE_EVENTS):
                     objectives.append(e["wall"])
-
-        talk_overs = Counter()
-        ordered = sorted(window, key=lambda u: u["t"])
-        for i, u in enumerate(ordered):
-            for other in ordered[max(0, i - 20):i]:
-                if (other["speaker"] != u["speaker"]
-                        and other["t"] < u["t"] < other["t_end"] - TALK_OVER_GRACE_S):
-                    talk_overs[u["player"]] += 1
-                    break
+            early_end, late = phase_times(game)
+        team = roster.team_of(present)
+        played.append({**base, "game": number, "minutes": round((w1 - w0) / 60, 3),
+                       "result": game["result"] if game else None, "roster": team})
+        played[-1]["_window"] = (w0, w1, game, early_end if game else None,
+                                 late if game else None, entries)
 
         for player in sorted(present):
-            mine = [u for u in window if u["player"] == player]
-            cats = Counter()
-            for u in mine:
-                cats.update(u["counts"])
-            rows.append({
-                "session": session_id,
-                "date": date.isoformat(),
-                "week": (date - timedelta(days=date.weekday())).isoformat(),
-                "month": date.strftime("%Y-%m"),
-                "game": number,
-                "game_file": game["file"] if game else None,
-                "result": game["result"] if game else None,
-                "player": player,
-                "minutes": round(minutes, 3),
-                "talk_s": round(sum(u["t_end"] - u["t"] for u in mine), 2),
-                "team_talk_s": round(team_talk, 2),
-                "words": sum(u["n_words"] for u in mine),
-                "fights": len(fights),
-                "fights_spoke": sum(1 for f0, f1 in fights
-                                    if any(u["t"] < f1 and u["t_end"] > f0 for u in mine)),
-                "fight_words": sum(u["n_words"] for f0, f1 in fights
-                                   for u in mine if f0 <= u["t"] < f1),
-                "deaths": len(deaths[player]),
-                "deaths_blamed": sum(1 for d in deaths[player]
-                                     if any(d <= u["t"] <= d + BLAME_WINDOW_S
-                                            and u["counts"].get(AT_TEAMMATES) for u in mine)),
-                "talk_overs": talk_overs[player],
-                "talk_zh_s": round(sum(u["t_end"] - u["t"] for u in mine
-                                       if u.get("language") == "zh"), 2),
-                "team_shotcalls": team_shotcalls,
-                "objectives": len(objectives),
-                "objectives_itemcall": sum(1 for o in objectives
-                                           if any(o - OBJECTIVE_SETUP_S <= u["t"] <= o
-                                                  and u["counts"].get("Item timers") for u in mine)),
-                "cats": {k: v for k, v in cats.items() if v},
-            })
-    return rows, unmapped
+            said = [u for u in segment if u["player"] == player]
+            if game:
+                lane = lane_of(roster.role(player), entries.get(player))
+                early, later = game["to_wall"](early_end(lane)), game["to_wall"](late)
+                windows = [("early", w0, min(early, w1)), ("mid", max(early, w0), min(later, w1)),
+                           ("late", max(later, w0), w1)]
+            else:
+                windows = [(None, w0, w1)]
+            for phase, a, b in windows:
+                if b - a <= 0:
+                    continue
+                window = [u for u in segment if a <= u["t"] < b]
+                mine = [u for u in window if u["player"] == player]
+                fights_here = [f for f in fights if a <= f[0] + FIGHT_LEAD_S < b]
+                objectives_here = [o for o in objectives if a <= o < b]
+                my_deaths = [d for d in deaths[player] if a <= d < b]
+                vision = (vision_between(game, entries.get(player), to_game_time(game, a),
+                                         to_game_time(game, b)) if game else None)
+                cats = Counter()
+                for u in mine:
+                    cats.update(u["counts"])
+                rows.append({
+                    **base,
+                    "game": number,
+                    "game_file": game["file"] if game else None,
+                    "result": game["result"] if game else None,
+                    "roster": team,
+                    "phase": phase,
+                    "player": player,
+                    "minutes": round((b - a) / 60, 3),
+                    "talk_s": round(sum(u["t_end"] - u["t"] for u in mine), 2),
+                    "team_talk_s": round(sum(u["t_end"] - u["t"] for u in window), 2),
+                    "words": sum(u["n_words"] for u in mine),
+                    "fights": len(fights_here),
+                    "fights_spoke": sum(1 for f0, f1 in fights_here
+                                        if any(u["t"] < f1 and u["t_end"] > f0 for u in said)),
+                    "fight_words": sum(u["n_words"] for f0, f1 in fights_here
+                                       for u in said if f0 <= u["t"] < f1),
+                    "plays": sum(1 for p in plays if a <= p < b) + len(objectives_here),
+                    "deaths": len(my_deaths),
+                    "deaths_blamed": sum(1 for d in my_deaths
+                                         if any(d <= u["t"] <= d + BLAME_WINDOW_S
+                                                and u["counts"].get(AT_TEAMMATES) for u in said)),
+                    "talk_overs": sum(1 for u in mine if u["over"]),
+                    "talk_zh_s": round(sum(u["t_end"] - u["t"] for u in mine
+                                           if u.get("language") == "zh"), 2),
+                    "team_shotcalls": sum(u["counts"].get("Shotcalling", 0) for u in window),
+                    "objectives": len(objectives_here),
+                    "objectives_itemcall": sum(
+                        1 for o in objectives_here
+                        if any(o - OBJECTIVE_SETUP_S <= u["t"] <= o
+                               and (u["counts"].get("Item timers") or u["counts"].get("Resources"))
+                               for u in said)),
+                    "vision": round(vision, 2) if vision is not None else 0,
+                    "vision_minutes": round((b - a) / 60, 3) if vision is not None else 0,
+                    "cats": {k: v for k, v in cats.items() if v},
+                })
+
+    # Word-for-word quotes of every flame line (and other negative lines),
+    # so they can be looked at directly, with when they were said.
+    quotes = []
+    for u in utterances:
+        kind = ("Flame" if u["counts"].get(AT_TEAMMATES)
+                else "Frustration" if u["counts"].get(AT_SELF) else None)
+        if not kind:
+            continue
+        where = next((g for g in played if g["_window"][0] <= u["t"] < g["_window"][1]), None)
+        clock = phase = None
+        if where and where["_window"][2]:
+            w0, w1, game, early_end, late, entries = where["_window"]
+            clock = to_game_time(game, u["t"])
+            lane = lane_of(roster.role(u["player"]), entries.get(u["player"]))
+            phase = "early" if clock < early_end(lane) else "mid" if clock < late else "late"
+        quotes.append({**base, "kind": kind, "player": u["player"] or u["speaker"],
+                       "on_roster": u["player"] is not None,
+                       "game": where["game"] if where else None,
+                       "roster": where["roster"] if where else roster.team_of({u["player"]}),
+                       "clock": round(clock) if clock is not None else None, "phase": phase,
+                       "time": datetime.fromtimestamp(u["t"]).strftime("%H:%M:%S"),
+                       "text": u.get("text", ""),
+                       "text_en": u.get("text_en", "") if u.get("language") == "zh" else ""})
+    for g in played:
+        del g["_window"]
+    return rows, unmapped, played, quotes
 
 
 # ---------------------------------------------------------------------------
@@ -602,12 +873,19 @@ def derived_stats(t):
              "info_per_10min": per10(sum(c[k] for k in INFO_KINDS))}
     for kind in INFO_KINDS:
         stats[f"{kind.lower().replace(' ', '_')}_per_10min"] = per10(c[kind])
-    stats["item_timers_before_objectives_%"] = pct(t["objectives_itemcall"], t["objectives"])
+    stats["item_or_gold_talk_before_objectives_%"] = pct(t["objectives_itemcall"], t["objectives"])
+    stats["resource_calls_per_10min"] = per10(c["Resources"])
+    stats["vision_talk_per_10min"] = per10(c["Vision talk"])
+    for kind in VISION_KINDS:
+        stats[f"{kind.lower().replace(' ', '_')}_per_10min"] = per10(c[kind])
+    stats["vision_score_per_10min"] = (round(10 * t["vision"] / t["vision_minutes"], 2)
+                                       if t["vision_minutes"] >= 5 else "")
     stats["shotcalls_per_10min"] = per10(c["Shotcalling"])
     stats["objective_mentions_per_10min"] = per10(c["Objectives"])
-    stats["accountability_per_10min"] = per10(c["Accountability"])
+    stats["accountability_per_10_plays"] = (round(10 * c["Accountability"] / t["plays"], 2)
+                                            if t["plays"] >= 5 else "")
     stats["positivity_%"] = pct(c["Positive"], c["Positive"] + c[AT_TEAMMATES], 3)
-    stats["frustration_at_teammates_per_10min"] = per10(c[AT_TEAMMATES])
+    stats["flame_at_teammates_per_10min"] = per10(c[AT_TEAMMATES])
     stats["blame_after_death_%"] = pct(t["deaths_blamed"], t["deaths"], 2)
     stats["fight_presence_%"] = pct(t["fights_spoke"], t["fights"])
     stats["words_per_teamfight"] = round(t["fight_words"] / t["fights"], 1) if t["fights"] else ""
@@ -617,25 +895,32 @@ def derived_stats(t):
 
 
 def write_csv(path, rows):
+    """One line per player per session: whole games ("all"), then the early,
+    mid and late game separately."""
     by_session = defaultdict(list)
     for r in rows:
         by_session[(r["date"], r["session"], r["player"])].append(r)
     with open(path, "w", encoding="utf-8-sig", newline="") as f:
         writer = None
-        for (date, session, player), group in sorted(by_session.items()):
-            t = add_up(group)
-            results = [g["result"] for g in group]
-            team_calls = t["team_shotcalls"]
-            row = {"date": date, "session": session, "player": player,
-                   "games": sum(1 for g in group if g["game"]),
-                   "wins": results.count("Win"), "losses": results.count("Lose"),
-                   "minutes": round(t["minutes"], 1), "deaths": t["deaths"], "fights": t["fights"],
-                   **derived_stats(t),
-                   "shotcall_share_%": round(100 * t["cats"]["Shotcalling"] / team_calls, 1) if team_calls else ""}
-            if writer is None:
-                writer = csv.DictWriter(f, fieldnames=list(row))
-                writer.writeheader()
-            writer.writerow(row)
+        for (date, session, player), everything in sorted(by_session.items()):
+            for phase in ("all",) + PHASES:
+                group = everything if phase == "all" else [r for r in everything if r["phase"] == phase]
+                if not group:
+                    continue
+                t = add_up(group)
+                games = {r["game"]: r["result"] for r in group if r["game"]}
+                team_calls = t["team_shotcalls"]
+                row = {"date": date, "session": session, "roster": group[0]["roster"] or "",
+                       "player": player, "part_of_game": phase, "games": len(games),
+                       "wins": list(games.values()).count("Win"),
+                       "losses": list(games.values()).count("Lose"),
+                       "minutes": round(t["minutes"], 1), "deaths": t["deaths"], "fights": t["fights"],
+                       "plays": t["plays"], **derived_stats(t),
+                       "shotcall_share_%": round(100 * t["cats"]["Shotcalling"] / team_calls, 1) if team_calls else ""}
+                if writer is None:
+                    writer = csv.DictWriter(f, fieldnames=list(row))
+                    writer.writeheader()
+                writer.writerow(row)
 
 
 # ---------------------------------------------------------------------------
@@ -663,16 +948,20 @@ def save_game_delay(paths, game_file, seconds):
 def game_list(paths):
     """Every recorded game, merged and summarised, for the app's Games tab."""
     files = sorted(paths.games.glob("game_*.jsonl")) if paths.games.is_dir() else []
-    roster = Roster(load_roster(paths.roster))
+    roster = Roster.load(paths.roster)
     out = []
     for g in load_games(files, load_game_delays(paths)):
-        ours = [roster.game_player(p) for p in g["players"]]
+        ours = [n for n in (roster.game_player(p) for p in g["players"]) if n]
         out.append({
             "id": g["file"], "start": g["start"], "end": g["end"], "pieces": len(g["files"]),
-            "spectator": g["spectator"], "delay": g["delay"], "result": g["result"],
+            "spectator": g["spectator"], "player_view": g["player_view"],
+            "delay": g["delay"], "result": g["result"],
             "kills": sum(1 for e in g["events"] if e.get("EventName") == "ChampionKill"),
+            "objectives": sum(1 for e in g["events"] if str(e.get("EventName", "")).endswith("Kill")
+                              and any(o in str(e.get("EventName")) for o in OBJECTIVE_EVENTS)),
             "champions": [p.get("championName") for p in g["players"]],
-            "our_players": [n for n in ours if n],
+            "our_players": ours,
+            "roster": roster.team_of(set(ours)),
         })
     return out[::-1]
 
@@ -702,16 +991,27 @@ def roster_candidates(paths):
             "riot": sorted(riot.values(), key=lambda r: -r["games"])}
 
 
-def save_roster(paths, players):
-    """Write Roster.txt from the app's Roster tab: [{name, discord: [], riot: []}]."""
-    lines = ["# Your team's roster (edited in the app: Roster tab).",
-             "# Name | Discord username(s) | Riot ID(s)", ""]
+def save_roster(paths, rosters, players):
+    """Write Roster.txt from the app's Rosters tab.
+    rosters: names in order; players: [{name, discord: [], riot: [], role, roster}]."""
+    def clean(values):
+        return ", ".join(str(x).strip().replace("|", "/").replace(",", " ")
+                         for x in values if str(x).strip())
+    names = [str(r).strip().replace("[", "(").replace("]", ")") for r in rosters if str(r).strip()]
     for p in players:
-        name = str(p.get("name", "")).strip().replace("|", "/")
-        if not name:
-            continue
-        clean = lambda xs: ", ".join(str(x).strip().replace("|", "/").replace(",", " ") for x in xs if str(x).strip())
-        lines.append(f"{name} | {clean(p.get('discord', []))} | {clean(p.get('riot', []))}")
+        if p.get("roster") and p["roster"] not in names:
+            names.append(p["roster"])
+    names = names or [DEFAULT_ROSTER]
+    lines = ["# Your team's rosters (edited in the app: Rosters tab).",
+             "# [Roster name], then one line per player:",
+             "# Name | Discord username(s) | Riot ID(s) | Role"]
+    for r in names:
+        lines += ["", f"[{r}]"]
+        for p in players:
+            name = str(p.get("name", "")).strip().replace("|", "/")
+            if name and (p.get("roster") or names[0]) == r:
+                role = p.get("role") if p.get("role") in ROLES else ""
+                lines.append(f"{name} | {clean(p.get('discord', []))} | {clean(p.get('riot', []))} | {role}")
     paths.roster.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -731,72 +1031,83 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         riot_counts = Counter(p.get("riotId") for g in games for p in g["players"]
                               if p.get("riotId") and p.get("riotId") != "#")
         write_roster_template(paths.roster, discord_names, riot_counts)
-        log("No roster yet: open the Roster tab to say who's who.")
+        log("No roster yet: open the Rosters tab to say who's who.")
         if open_roster and os.name == "nt":
             os.startfile(paths.roster)
 
-    roster = Roster(load_roster(paths.roster))
+    roster = Roster.load(paths.roster)
     vocab = {}
     if paths.vocab.exists():
         try:
             vocab = json.loads(paths.vocab.read_text(encoding="utf-8"))
         except ValueError:
             pass
-    teammate_names = [p["name"] for p in roster.players] + [d for p in roster.players for d in p["discord"]]
+    teammate_names = roster.names + [d for p in roster.players for d in p["discord"]]
     classifier = Classifier(load_categories(paths.callouts), vocab, teammate_names)
+    try:
+        from transcriber import TermFixer, read_corrections
+        corrections = read_corrections(paths)
+        if corrections:
+            classifier.fix = TermFixer({}, [], {}, corrections).fix
+    except Exception as error:         # the stats still work without corrections
+        log(f"  (Corrections not applied to the stats: {error})")
 
-    warnings, all_rows, unmapped = [], [], set()
+    warnings, all_rows, unmapped, played, quotes = [], [], set(), [], []
     if roster.empty:
         warnings.append("No roster yet, so people are shown by Discord name and fight/death/objective "
-                        "stats are missing. Open the Roster tab to say who's who.")
+                        "stats are missing. Open the Rosters tab to say who's who.")
     for path in transcripts:
-        rows, missing = analyze_session(path, games, roster, classifier, warnings)
+        rows, missing, games_here, said = analyze_session(path, games, roster, classifier, warnings)
+        quotes.extend(said)
         all_rows.extend(rows)
+        played.extend(games_here)
         unmapped |= missing
     if unmapped:
-        warnings.append("These Discord names aren't on the roster (Roster tab), so their comms only count "
+        warnings.append("These Discord names aren't on a roster (Rosters tab), so their comms only count "
                         "toward the team total: " + ", ".join(sorted(unmapped)))
-    watched = [g for g in games if g.get("spectator")]
+    watched = [g for g in games if g.get("spectator") and not g.get("player_view")]
     if watched:
         warnings.append(
-            f"{len(watched)} game(s) were recorded while spectating (with rewinds). Event times use "
-            "the moments you were watching live. If spectators in your custom lobby see the game "
-            "late, every event in those games is late by that much: do the clock test (a player "
-            "reads out their game clock on Discord) and tell Claude the difference.")
+            f"{len(watched)} game(s) were only recorded by a spectator. League doesn't tell "
+            "spectators about dragons, barons or heralds, so \"item or gold talk before objectives\" "
+            "can't be worked out for those games. Fix: have one of the five players also record "
+            "(see the Games tab). Spectators may also see the game late: set the delay per game in "
+            "the Games tab.")
     if roster.players and games:
         seen = {n for g in games for n in (roster.game_player(p) for p in g["players"]) if n}
-        missing_riot = [p["name"] for p in roster.players if p["riot"] and p["name"] not in seen]
+        missing_riot = [n for n in roster.names
+                        if any(p["riot"] for p in roster.players if p["name"] == n) and n not in seen]
         if missing_riot:
             warnings.append("No recorded games have these players' accounts (check them in the "
-                            "Roster tab): " + ", ".join(missing_riot))
+                            "Rosters tab): " + ", ".join(missing_riot))
+    no_role = [n for n in roster.names if not roster.role(n)
+               and any(p["riot"] for p in roster.players if p["name"] == n)
+               and any(r["player"] == n and r["phase"] for r in all_rows)]
+    if no_role:
+        warnings.append("No role set for " + ", ".join(no_role) + " (Rosters tab). Their laning phase "
+                        "is taken to end with the bot lane's first tower.")
 
-    order = [p["name"] for p in roster.players]
+    order = list(roster.names)
     for r in all_rows:
         if r["player"] not in order:
             order.append(r["player"])
     players = [p for p in order if any(r["player"] == p for r in all_rows)]
-
-    sessions = defaultdict(lambda: {"games": set(), "wins": 0, "losses": 0, "minutes": 0})
-    counted = set()
-    for r in all_rows:
-        s = sessions[(r["date"], r["session"])]
-        if (r["session"], r["game"]) not in counted:
-            counted.add((r["session"], r["game"]))
-            s["minutes"] += r["minutes"]
-            if r["game"]:
-                s["games"].add(r["game"])
-                s["wins"] += r["result"] == "Win"
-                s["losses"] += r["result"] == "Lose"
+    roster_list = []
+    for name in roster.roster_names:
+        members = [p["name"] for p in roster.players if p["roster"] == name]
+        members += [r["player"] for r in all_rows if r["roster"] == name]   # subs who played
+        roster_list.append({"name": name, "players": [p for p in dict.fromkeys(members) if p in players]})
 
     data = {
         "generated": datetime.now().astimezone().isoformat(timespec="seconds"),
         "version": VERSION,
         "players": players,
+        "rosters": roster_list,
         "info_kinds": INFO_KINDS,
+        "vision_kinds": VISION_KINDS,
         "rows": all_rows,
-        "sessions": [{"date": d, "session": sid, "games": len(s["games"]), "wins": s["wins"],
-                      "losses": s["losses"], "minutes": round(s["minutes"], 1)}
-                     for (d, sid), s in sorted(sessions.items())],
+        "games": played,
+        "quotes": quotes,
         "warnings": warnings,
     }
     template = bundled("dashboard_template.html").read_text(encoding="utf-8")
@@ -807,7 +1118,8 @@ def build(paths, log=print, open_browser=True, open_roster=True):
 
     for w in warnings:
         log("  Note: " + w)
-    log(f"Dashboard updated: {len(data['sessions'])} session(s), {len(players)} player(s).")
+    sessions = len({g["session"] for g in played})
+    log(f"Dashboard updated: {sessions} session(s), {len(players)} player(s).")
     if open_browser:
         webbrowser.open(paths.dashboard.as_uri())
     return paths.dashboard

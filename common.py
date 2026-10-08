@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "ScrimStats"
-VERSION = "2.3.1"
+VERSION = "2.4.0"
 
 
 def app_dir():
@@ -67,6 +67,36 @@ class Paths:
         return self
 
 
+SAME_EVENT_S = 3.0   # a replayed event's time can differ by a few hundredths of a second
+
+
+def event_identity(event):
+    """What an event is, apart from when: its type and who/what was involved."""
+    return (event.get("EventName"), event.get("KillerName"), event.get("VictimName"),
+            event.get("DragonType"), event.get("TurretKilled"), event.get("InhibKilled"),
+            event.get("Acer"), event.get("KillStreak"))   # a double kill, then a triple kill
+
+
+class SeenEvents:
+    """Remembers events, to spot a spectator rewind replaying one. A replayed
+    event gets a new ID and its time can differ slightly (29.16 vs 29.18), so
+    "the same" means the same type and people within a few seconds."""
+
+    def __init__(self):
+        self.times = {}
+
+    def is_repeat(self, event):
+        try:
+            when = float(event.get("EventTime") or 0)
+        except (TypeError, ValueError):
+            when = 0.0
+        times = self.times.setdefault(event_identity(event), [])
+        if any(abs(when - t) <= SAME_EVENT_S for t in times):
+            return True
+        times.append(when)
+        return False
+
+
 def sha256(path):
     import hashlib
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -76,7 +106,8 @@ def sha256(path):
 # matching one of these hasn't been edited, so it's safe to upgrade.
 OLD_DEFAULTS = {
     "Callout types.txt": {"c0940b96d254db171983e07dc81c71fe0e6251e3fd55143295562926ef9a9f74",    # 2.0.x
-                          "08aab5039cd313701ef87d1b64b2db987f9fefd795cc0bb1c1fe0d87d9d4700d"},   # 2.1-2.2
+                          "08aab5039cd313701ef87d1b64b2db987f9fefd795cc0bb1c1fe0d87d9d4700d",    # 2.1-2.2
+                          "799689ee2d4c45b668d6aac468b4d88d2cac70a54a5195543c58c4edeb743904"},   # 2.3
     "League words.txt": {"a28537c694a2c5549e8a3ade89842fa7122f54740502a581adf68b378235d5e3",     # 2.0.x
                          "f994f3d59f51856fa8429da286cd9837b02470fed2b2c91cc96dc2f5f6055823"},    # 2.1-2.2
     "Champion nicknames.txt": {"e1da9b999b327571a0005319f16cdc353f3f1c920b45668c9b39d55fa9742f94"},

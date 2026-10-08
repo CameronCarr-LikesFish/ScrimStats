@@ -19,13 +19,16 @@ the two up on one clock, and tracks each player's comms habits over months.
 - **English and Mandarin Chinese:** it detects which language is being
   spoken, even in mixed sentences. Chinese lines are kept in Chinese with a
   rough English translation, and the stats read Chinese directly.
-- **Review:** a dashboard of per-player stats over time:
-  - **Information:** enemy info, my status, item timers, and timers, plus
-    item timers before objectives.
+- **Review:** a dashboard of per-player stats over time, per roster
+  (Varsity, JV...), for whole games or just the early, mid or late game:
+  - **Information:** enemy info, my status, item timers, timers, asking for
+    resources, and item or gold talk before objectives.
+  - **Vision:** ward talk (warding, asking for vision, sweeping) and
+    League's vision score.
   - **Shotcalling:** calls per player, shotcall share, and main shotcallers
     per game.
-  - **Attitude:** positivity, frustration aimed at teammates, accountability,
-    and blame after death.
+  - **Attitude:** positivity, flame at teammates (every flame line quoted word
+    for word), accountability per play, and blame after death.
   - **Talking:** talking over teammates, fight presence, and talk share.
 
 ## Download and use
@@ -37,9 +40,10 @@ the two up on one clock, and tracks each player's comms habits over months.
    Windows may say "Windows protected your PC", because the app isn't
    signed. Click **More info → Run anyway**.
 2. Read **`How to use.txt`** next to the `.exe`. In short:
-   - Click **Start recording** before a scrim block.
+   - Click **Start recording** before a scrim block. If you spectate, have
+     one player record too: spectators aren't told about dragons or barons.
    - Afterwards, use **Add Craig download…** and then **Transcribe**.
-   - Click **Open dashboard** to see the stats.
+   - Set up your rosters in the **Rosters** tab, then open **Dashboard**.
 3. The first transcription downloads the speech model (about 0.5 GB), once.
 
 It only works on the PC where League is running, because the game's data

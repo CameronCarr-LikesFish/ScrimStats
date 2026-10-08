@@ -34,10 +34,27 @@ My status: flash, ult, tp, summs, summoners, ignite, exhaust, heal, barrier, cle
 # Only counts when the sentence says I / I'm / my / me (or 我). Every item name
 # from Riot's official list is added automatically, in English and Chinese;
 # these are extra words and nicknames.
-Item timers: item, items, gold, component, completed, complete, finish, finished, spike, boots, legendary, buy, buying, back for, ie, botrk, bork, zhonyas, zhonya's, ga, qss, ldr, deathcap, cap, void, liandrys, ludens, rylais, shojin, kraken, trinity, cleaver, collector, mejais, stopwatch, tear, sheen, bf sword, bf, pickaxe, dirk, serrated, lost chapter, blasting wand, needlessly large rod, nlr, 装备, 出装, 大件, 小件, 金币, 差钱, 块钱, 能出, 出不了, 鞋子, 无尽, 中娅, 金身
+Item timers: item, items, gold, component, completed, complete, finish, finished, spike, boots, legendary, buy, buying, back for, ie, botrk, bork, zhonyas, zhonya's, ga, qss, ldr, lord doms, doms, dominiks, bt, rfc, pd, shiv, mercs, tabis, steelcaps, swifties, zerkers, sorcs, lucidity, dcap, rabadons, seraphs, manamune, muramana, steraks, hydra, tiamat, youmuus, ghostblade, eon, maw, mercurial, sundered, bc, dd, fon, visage, warmogs, jaksho, nashors, guinsoos, runaans, statikk, navori, er, mortal reminder, seryldas, axiom, profane, hullbreaker, thornmail, randuins, fh, kaenic, banshees, morello, horizon, shadowflame, riftmaker, rocketbelt, everfrost, malignance, first item, second item, third item, two items, three items, 2 items, 3 items, deathcap, cap, void, liandrys, ludens, rylais, shojin, kraken, trinity, cleaver, collector, mejais, stopwatch, tear, sheen, bf sword, bf, pickaxe, dirk, serrated, lost chapter, blasting wand, needlessly large rod, nlr, 装备, 出装, 大件, 小件, 金币, 差钱, 块钱, 能出, 出不了, 鞋子, 无尽, 中娅, 金身
 
 # When things come up: objectives, summoner spells, respawns.
 Timers: seconds, timer, spawns, spawns in, respawn, up in, comes up, is up, in 10, in 15, in 20, in 30, in 40, in 45, in 50, in 60, one minute, a minute, 1 minute, two minutes, 2 minutes, 秒, 分钟, 刷新, 还有一分钟, 复活
+
+# ===== RESOURCES: asking for gold, farm, waves, camps =====
+# "I need gold for this", "can I get the wave", "give me the camp". These
+# phrases are about yourself already, so no I / my is needed. They also count
+# toward "item or gold talk before objectives".
+Resources: need gold, need money, need the gold, need some gold, need farm, need to farm, need cs, need the wave, need this wave, need waves, need the waves, need kills, need the kill, need this kill, need camps, need the camp, need this camp, need resources, need every, can i get the, can i get this, can i have the, can i have this, can i take this, can i take the, can i farm, give me the wave, give me this wave, give me the camp, give me the kill, give me gold, let me take the wave, let me take this wave, let me take the camp, let me take this camp, let me have the wave, let me farm, let me last hit, i want the wave, i want this wave, i want the camp, i'll take the wave, i'll take this wave, i'll take the camp, i'll take this camp, gimme, every bit of gold, for gold, 我要钱, 我需要钱, 我缺钱, 我要经济, 经济给我, 兵线给我, 野怪给我, 给我吃, 让我吃, 让我拿, 让我补
+
+# ===== VISION: three kinds of ward talk =====
+# Wards: placing them and where they are, ours or theirs: "I warded tri",
+# "pink in pixel", "Vayne warded somewhere". Plain ward talk counts here.
+Warding: ward, wards, warded, warding, i warded, i'll ward, ill ward, gonna ward, going to ward, put a ward, placed a ward, have a ward, ward here, ward is, ward at, ward in, pink, pinks, control ward, control wards, trinket, farsight, blue trinket, deep ward, deep wards, 插眼, 插了眼, 我插, 放眼, 眼在, 做视野, 真眼, 蓝眼
+
+# Asking for vision or control wards: "we have no vision", "buy pinks".
+Vision requests: no vision, need vision, need a ward, need wards, need a pink, need pinks, need control wards, can someone ward, can you ward, could you ward, you could ward, go ward, help me ward, someone ward, somebody ward, ward for me, buy pinks, buy a pink, buy control, buy wards, buy a ward, no wards, out of wards, it's dark, its dark, we're blind, we are blind, 没视野, 没有视野, 没眼, 需要视野, 要视野, 买真眼, 买眼, 插个眼, 做个视野
+
+# Clearing the enemy's vision: "I swept it", "sweep drag".
+Sweeping: sweep, sweeping, swept, sweeper, sweepers, oracle, lens, deward, dewarding, dewarded, clear the ward, clear ward, clear vision, cleared the ward, kill the ward, killed the ward, kill ward, killed ward, take the ward, 排眼, 排了, 扫描, 排视野, 扫一下, 打掉眼
 
 # ===== OTHER =====
 
@@ -46,10 +63,14 @@ Objectives: drag, dragon, baron, nash, herald, grubs, voidgrubs, atakhan, elder,
 
 Positive: nice, good job, gj, well played, wp, good stuff, no worries, nt, nice try, that's okay, it's okay, it's fine, all good, we got this, love it, great, clean, huge, insane, good call, 漂亮, 打得好, 好样的, 牛逼, 太强了, 厉害, 没事, 没关系, 不要紧, 稳住, 加油
 
-# Frustration only counts AGAINST someone when it's aimed at a teammate
-# (the sentence says you / your / a teammate's name, or 你): "what are you
-# doing", "你在干嘛". Frustration at yourself ("fuck this, I'm so bad",
-# "卧槽我好菜") is fine and isn't scored.
-Frustration: fuck, fucking, shit, wtf, what the fuck, what are you doing, are you serious, seriously, useless, trash, inting, report, stupid, idiot, come on, cmon, unbelievable, why would you, why did you, why are you, oh my god, ugh, bro why, dude, 卧槽, 我靠, 妈的, 傻逼, 干嘛, 搞什么, 什么鬼, 为什么, 别送, 演员, 服了, 无语, 好菜
+# FLAME: blaming or insulting a teammate. Only counts when "you" / "your" /
+# a teammate's name (or 你) is within a few words: "what are you doing",
+# "you're so useless", "Alex stop inting", "你在干嘛".
+Flame: what are you doing, what were you doing, what are you guys doing, why did you, why would you, why are you, why do you, why didn't you, why'd you, why you, are you serious, are you kidding, are you blind, you're so bad, youre so bad, you are so bad, so bad, you suck, useless, trash, garbage, dogshit, terrible, horrible, worst, inting, int, stop inting, stop dying, griefing, trolling, troll, stupid, idiot, braindead, brain dead, clown, noob, uninstall, learn to, can you not, what was that, what is this, report, 你在干嘛, 你干嘛, 你在干什么, 你搞什么, 会不会玩, 你好菜, 太菜, 菜狗, 废物, 垃圾, 演员, 别演, 送人头, 白给, 傻逼, 脑子, 坑货
+
+# FRUSTRATION: swearing and frustration that isn't aimed at anyone ("fuck
+# this", "I'm so bad", "卧槽"). It's fine and isn't scored; it's listed so
+# it's never mistaken for anything else.
+Frustration: fuck, fucking, shit, wtf, what the fuck, seriously, come on, cmon, unbelievable, oh my god, ugh, bro why, dude, 卧槽, 我靠, 妈的, 搞什么, 什么鬼, 服了, 无语, 好菜
 
 Accountability: my bad, mb, my fault, sorry, that's on me, i messed up, i misplayed, i fucked up, i screwed up, 我的锅, 我的错, 对不起, 不好意思, 怪我, 我失误

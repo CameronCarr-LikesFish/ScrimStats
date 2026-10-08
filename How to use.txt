@@ -15,21 +15,29 @@ HOME
    The Activity box shows what's happening.
 
 DASHBOARD
-   Each player's comms stats, and how they change over time. Every stat is
-   explained at the bottom.
+   Each player's comms stats, and how they change over time. Pick a roster
+   (Varsity, JV...) and a part of the game (early / mid / late) at the top.
+   Every stat is explained at the bottom.
 
 TRANSCRIPTS
    Read and search who said what. Chinese lines show a rough English
    translation underneath.
 
-ROSTER  (do this once, and when the team changes)
-   Add your players. Then, in the lists of names found in your recordings,
-   choose who each Discord name and in-game account belongs to. Save.
+ROSTERS  (do this once, and when the team changes)
+   One tab per roster (Varsity, JV...): "Add roster" makes another. Add
+   your players and set each one's role. Then, in the lists of names found
+   in your recordings, choose who each Discord name and in-game account
+   belongs to. Save. A sub on two rosters: add them to both with the same
+   name.
 
 GAMES
    Every recorded game. If you spectated a game with a delay (the usual
    spectator delay is 3 minutes), set it here so the game lines up with
    the comms.
+   Spectating? League doesn't tell spectators about dragons, barons or
+   heralds. Have one of the five players run ScrimStats too and click
+   "Start recording". After scrims they send you the new files from their
+   "Game recordings" folder, and you click "Add a player's recordings...".
 
 SETTINGS
    The word lists the app uses (callout types, League words, champion

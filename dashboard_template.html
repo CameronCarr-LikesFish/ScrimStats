@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Scrim Comms Dashboard</title>
+<title>ScrimStats Dashboard</title>
 <style>
   :root {
     color-scheme: light;
@@ -115,14 +115,23 @@
   <div id="warnings"></div>
 
   <section>
-    <h2>Players: last 30 days</h2>
+    <h2 id="cards-title">Players: last 30 days</h2>
     <p class="note" id="cards-note"></p>
     <div class="cards" id="cards"></div>
   </section>
 
   <section>
     <div class="filters card" role="group" aria-label="Filters">
+      <label id="roster-label" hidden>Roster <select id="f-roster"></select></label>
       <label>Stat <select id="f-metric"></select></label>
+      <label>Part of game
+        <select id="f-phase">
+          <option value="all">Whole game</option>
+          <option value="early">Early (laning)</option>
+          <option value="mid">Mid game</option>
+          <option value="late">Late game</option>
+        </select>
+      </label>
       <label>Group by
         <select id="f-group">
           <option value="session">Session</option>
@@ -164,6 +173,23 @@
   </section>
 
   <section class="card">
+    <h2>Flame and negative comments</h2>
+    <p class="note">Every line counted as flame, word for word, so it can be looked at directly. "Other negative" adds
+      swearing and frustration that wasn't aimed at anyone (it doesn't count against them). Follows the roster, time range
+      and wins/losses filters above. Transcription mistakes happen: check the transcript before raising something.</p>
+    <div class="filters" style="margin-bottom:10px">
+      <label>Show
+        <select id="q-kind">
+          <option value="Flame">Flame only</option>
+          <option value="all">Flame + other negative</option>
+        </select>
+      </label>
+      <label>Player <select id="q-player"><option value="">Everyone</option></select></label>
+    </div>
+    <div class="table-wrap" id="quotes"></div>
+  </section>
+
+  <section class="card">
     <h2>Sessions</h2>
     <p class="note">Every scrim block in the time range above, newest first. Talk share = each player's part of all talking during games. Main shotcallers = people making at least 20% of the calls, per game.</p>
     <div class="table-wrap" id="sessions"></div>
@@ -172,6 +198,7 @@
   <section class="card">
     <h2>What the numbers mean</h2>
     <p class="note">All stats count words and phrases from the transcripts, so they can't hear tone or sarcasm and inherit any transcription mistakes. They're best for trends over weeks and months, not judging a single game. Phrase lists live in Settings\Callout types.txt; who a sentence is about is judged from words like I / you / he (我 / 你 / 他 in Chinese). Chinese lines are sorted using Chinese phrases on the original wording, plus the English translation.</p>
+    <p class="note"><b>Parts of the game.</b> Early (laning) lasts until the first outer tower in that player's lane falls, either team's, and at most until 20:00. Junglers: the first outer tower anywhere. The lane comes from the player's role on the roster (no role = bot lane). Mid game runs until 30:00, or until the first inhibitor falls if that's sooner. Late game is the rest.</p>
     <dl id="defs"></dl>
   </section>
 </main>
@@ -203,14 +230,15 @@ const dayName = d => d.toLocaleDateString(undefined, { month: "short", day: "num
 
 // Each player keeps one color everywhere, by roster order (never re-ranked).
 const color = name => {
-  const i = DATA.players.indexOf(name);
+  const i = rosterPlayers().indexOf(name);
   return i >= 0 && i < 8 ? `var(--s${i + 1})` : "var(--muted)";
 };
 
 // ---------- stats ----------
 const FIELDS = ["minutes", "talk_s", "team_talk_s", "words", "fights", "fights_spoke",
                 "fight_words", "deaths", "deaths_blamed", "talk_overs", "objectives",
-                "objectives_itemcall", "team_shotcalls", "talk_zh_s"];
+                "objectives_itemcall", "team_shotcalls", "talk_zh_s", "plays",
+                "vision", "vision_minutes"];
 function addUp(rows) {
   const t = { cats: {} };
   FIELDS.forEach(f => t[f] = 0);
@@ -227,21 +255,27 @@ const INFO_KINDS = DATA.info_kinds;
 
 // "Main shotcallers per game": in each game with at least 10 shotcalls, how
 // many people made at least 20% of them. Averaged over the games. Team-only.
+// (Each player's rows cover the whole game between them, split into early,
+// mid and late, so the team's total is the same summed over any one player.)
 function mainShotcallers(rows) {
   const games = new Map();
   for (const r of rows) {
     if (!r.game) continue;
     const key = r.session + "|" + r.game;
-    if (!games.has(key)) games.set(key, []);
-    games.get(key).push(r);
+    if (!games.has(key)) games.set(key, new Map());
+    const p = games.get(key);
+    if (!p.has(r.player)) p.set(r.player, { calls: 0, team: 0 });
+    p.get(r.player).calls += r.cats.Shotcalling || 0;
+    p.get(r.player).team += r.team_shotcalls;
   }
   const counts = [];
-  for (const g of games.values()) {
-    const total = g[0].team_shotcalls;
-    if (total >= 10) counts.push(g.filter(r => (r.cats.Shotcalling || 0) / total >= 0.2).length);
+  for (const players of games.values()) {
+    const total = Math.max(...[...players.values()].map(x => x.team));
+    if (total >= 10) counts.push([...players.values()].filter(x => x.calls / total >= 0.2).length);
   }
   return counts.length ? counts.reduce((a, b) => a + b, 0) / counts.length : null;
 }
+const sumCats = (t, names) => names.reduce((a, k) => a + cat(t, k), 0);
 
 const METRICS = [
   // --- Information ---
@@ -257,12 +291,31 @@ const METRICS = [
   { group: "Information", key: "items", label: "Item timers per 10 min", unit: "", better: "up", team: true,
     desc: "Telling the team about your items: \"I'll have IE for drake\", \"I won't have my item\". Both count; either way the team knows.",
     f: t => per10(cat(t, "Item timers"), t) },
-  { group: "Information", key: "itemsobj", label: "Item timers before objectives", unit: "%", better: "up", team: true,
-    desc: "Share of objectives (dragon, baron, herald, grubs, Atakhan) where they gave item info in the 90 seconds before it was taken.",
+  { group: "Information", key: "itemsobj", label: "Item or gold talk before objectives", unit: "%", better: "up", team: true,
+    desc: "Share of objectives (dragon, baron, herald, grubs, Atakhan) where they talked about their items or asked for gold in the 2½ minutes before it was taken. Spectators aren't told about dragons, barons or heralds, so this only works for games a player recorded too.",
     f: t => t.objectives > 0 ? 100 * t.objectives_itemcall / t.objectives : null },
   { group: "Information", key: "timers", label: "Timers per 10 min", unit: "", better: "up", team: true,
     desc: "When things come up: \"drag in 40\", \"flash up in 20\", \"baron up in a minute\".",
     f: t => per10(cat(t, "Timers"), t) },
+  { group: "Information", key: "resources", label: "Asking for resources per 10 min", unit: "", better: null, team: true,
+    desc: "Asking for gold, farm, waves or camps: \"I need gold for this\", \"can I get the wave\", \"give me the camp\".",
+    f: t => per10(cat(t, "Resources"), t) },
+  // --- Vision ---
+  { group: "Vision", key: "visiontalk", label: "Vision talk per 10 min", unit: "", better: "up", team: true,
+    desc: "Any talk about wards and vision: warding, asking for vision, and sweeping, together.",
+    f: t => per10(cat(t, "Vision talk"), t) },
+  { group: "Vision", key: "warding", label: "Warding calls per 10 min", unit: "", better: "up", team: true,
+    desc: "Placing wards and saying where wards are, ours or theirs: \"I warded tri\", \"pink in pixel\", \"Vayne warded somewhere\".",
+    f: t => per10(cat(t, "Warding"), t) },
+  { group: "Vision", key: "visionreq", label: "Asking for vision per 10 min", unit: "", better: null, team: true,
+    desc: "Asking for vision or control wards: \"we have no vision\", \"can someone ward\", \"I need to buy pinks\".",
+    f: t => per10(cat(t, "Vision requests"), t) },
+  { group: "Vision", key: "sweeping", label: "Sweeping calls per 10 min", unit: "", better: "up", team: true,
+    desc: "Clearing the enemy's vision: \"I swept drag\", \"they started sweeper\", \"kill the ward\".",
+    f: t => per10(cat(t, "Sweeping"), t) },
+  { group: "Vision", key: "visionscore", label: "Vision score per 10 min", unit: "", better: "up", team: true,
+    desc: "League's own vision score (the number on the scoreboard): points for placing wards, how long they last, and clearing the enemy's. League's live data doesn't count wards placed, so this is the closest number. Only for games recorded with ScrimStats 2.4 or newer.",
+    f: t => t.vision_minutes >= MIN_MINUTES ? 10 * t.vision / t.vision_minutes : null },
   // --- Shotcalling ---
   { group: "Shotcalling", key: "calls", label: "Shotcalls per 10 min", unit: "", better: null, team: true,
     desc: "Calling the team plan: \"we're fighting drake\", \"reset\", \"group mid\", per 10 minutes of game time.",
@@ -278,16 +331,16 @@ const METRICS = [
     f: t => per10(cat(t, "Objectives"), t) },
   // --- Attitude ---
   { group: "Attitude", key: "positivity", label: "Positivity", unit: "%", better: "up", team: true,
-    desc: "Positive phrases as a share of positive phrases + frustration aimed at teammates. Frustration at yourself doesn't count against you. Needs at least 3 such phrases.",
-    f: t => { const p = cat(t, "Positive"), n = cat(t, "Frustration at teammates"); return p + n >= 3 ? 100 * p / (p + n) : null; } },
-  { group: "Attitude", key: "atteam", label: "Frustration at teammates per 10 min", unit: "", better: "down", team: true,
-    desc: "Frustrated phrases aimed at someone (\"what are you doing\", \"why did you go in\"). \"Fuck this, I'm so bad\" is aimed at yourself and isn't counted.",
-    f: t => per10(cat(t, "Frustration at teammates"), t) },
-  { group: "Attitude", key: "accountability", label: "Accountability per 10 min", unit: "", better: "up", team: true,
-    desc: "Owning mistakes: \"my bad\", \"that's on me\", \"I misplayed\".",
-    f: t => per10(cat(t, "Accountability"), t) },
+    desc: "Positive phrases as a share of positive phrases + flame at teammates. Swearing or being frustrated with yourself doesn't count against you. Needs at least 3 such phrases.",
+    f: t => { const p = cat(t, "Positive"), n = cat(t, "Flame at teammates"); return p + n >= 3 ? 100 * p / (p + n) : null; } },
+  { group: "Attitude", key: "flame", label: "Flame at teammates per 10 min", unit: "", better: "down", team: true,
+    desc: "Blaming or insulting a teammate: \"what are you doing\", \"why did you go in\", \"you're so useless\". Only counts when \"you\" or a teammate's name is right next to it. Swearing on its own, or \"I'm so bad\", isn't flame.",
+    f: t => per10(cat(t, "Flame at teammates"), t) },
+  { group: "Attitude", key: "accountability", label: "Accountability per 10 plays", unit: "", better: "up", team: true,
+    desc: "Owning mistakes (\"my bad\", \"that's on me\", \"I misplayed\") per 10 plays. A play is any fight with a kill in it, or an objective taken. Needs at least 5 plays.",
+    f: t => t.plays >= 5 ? 10 * cat(t, "Accountability") / t.plays : null },
   { group: "Attitude", key: "blame", label: "Blame after death", unit: "%", better: "down", team: true,
-    desc: "Share of their deaths followed within 20 s by frustration aimed at a teammate. Needs at least 2 deaths.",
+    desc: "Share of their deaths followed within 20 s by flame at a teammate. Needs at least 2 deaths.",
     f: t => t.deaths >= 2 ? 100 * t.deaths_blamed / t.deaths : null },
   // --- Talking ---
   { group: "Talking", key: "over", label: "Talking over teammates per 10 min", unit: "", better: "down", team: true,
@@ -316,25 +369,48 @@ const fmt = (v, m) => v == null ? "–" : (m.unit === "%" ? `${Math.round(v)}%` 
 // Group by month once there are a few months of data; until then by session
 // (one month would otherwise be a single dot).
 const MONTHS = new Set(DATA.rows.map(r => r.month)).size;
-const state = { metric: "info", group: MONTHS >= 3 ? "month" : "session", result: "all", range: 0, hidden: new Set(), table: false };
+const ROSTERS = (DATA.rosters || []).filter(r => r.players.length);
+const state = { metric: "info", group: MONTHS >= 3 ? "month" : "session", result: "all", range: 0,
+                roster: ROSTERS.length ? ROSTERS[0].name : "", phase: "all", hidden: new Set(), table: false };
+// The players of the roster being looked at (everyone, when there's only one).
+function rosterPlayers() {
+  const r = ROSTERS.find(r => r.name === state.roster);
+  return ROSTERS.length > 1 && r ? r.players : DATA.players;
+}
+const inRoster = r => ROSTERS.length < 2 || r.roster === state.roster;
+const inPhase = r => state.phase === "all" || r.phase === state.phase;
 const latestDate = DATA.rows.length ? DATA.rows.reduce((a, r) => r.date > a ? r.date : a, "") : null;
 function inRange(r) {
   if (!state.range || !latestDate) return true;
   return parseDate(latestDate) - parseDate(r.date) < state.range * DAY;
 }
 function filteredRows(ignoreResult = false) {
-  return DATA.rows.filter(r => inRange(r) && (ignoreResult || state.result === "all" || r.result === state.result));
+  return DATA.rows.filter(r => inRange(r) && inRoster(r) && inPhase(r)
+    && (ignoreResult || state.result === "all" || r.result === state.result));
+}
+// Games played (one entry per game, not per player), for the roster being looked at.
+function gamesPlayed() {
+  return (DATA.games || []).filter(g => (ROSTERS.length < 2 || g.roster === state.roster) && inRange(g));
 }
 
 // ---------- header, warnings ----------
-function renderHeader() {
-  const s = DATA.sessions;
-  if (!s.length) { $("summary").textContent = "No transcripts yet. Run the transcriber after a scrim, then run this again."; return; }
-  const games = s.reduce((a, x) => a + x.games, 0);
-  const w = s.reduce((a, x) => a + x.wins, 0), l = s.reduce((a, x) => a + x.losses, 0);
-  $("summary").textContent = `${s.length} scrim sessions, ${games} games (${w}–${l}), ` +
-    `${dayName(parseDate(s[0].date))} to ${dayName(parseDate(s[s.length - 1].date))}. ` +
+function renderSummary() {
+  const g = gamesPlayed();
+  if (!g.length) {
+    $("summary").textContent = (DATA.games || []).length ? `No scrims for ${state.roster} in this time range yet.`
+      : "No transcripts yet. Transcribe a scrim, then refresh.";
+    return;
+  }
+  const sessions = new Set(g.map(x => x.session)).size, real = g.filter(x => x.game);
+  const w = real.filter(x => x.result === "Win").length, l = real.filter(x => x.result === "Lose").length;
+  const dates = g.map(x => x.date).sort();
+  $("summary").textContent = (ROSTERS.length > 1 ? state.roster + ": " : "") +
+    `${sessions} scrim session${sessions === 1 ? "" : "s"}, ${real.length} games (${w}–${l}), ` +
+    `${dayName(parseDate(dates[0]))} to ${dayName(parseDate(dates[dates.length - 1]))}. ` +
     `Updated ${new Date(DATA.generated).toLocaleString()}.`;
+}
+function renderHeader() {
+  renderSummary();
   if (DATA.warnings.length) {
     const box = el("div", { class: "warnings", role: "note" }, el("p", {}, el("b", { text: "Heads up" })));
     DATA.warnings.forEach(w => box.append(el("p", { text: w })));
@@ -348,10 +424,11 @@ function renderCards() {
   wrap.replaceChildren();
   if (!latestDate) return;
   const end = parseDate(latestDate);
+  $("cards-title").textContent = "Players: last 30 days" + (state.phase === "all" ? "" : ` (${$("f-phase").selectedOptions[0].text.toLowerCase()})`);
   $("cards-note").textContent = `The 30 days up to your latest session (${dayName(end)}), with the change from the 30 days before that.`;
-  const keys = ["info", "itemsobj", "callshare", "positivity", "accountability", "over"].filter(metric);
-  for (const p of DATA.players) {
-    const mine = DATA.rows.filter(r => r.player === p);
+  const keys = ["info", "itemsobj", "visiontalk", "callshare", "positivity", "accountability", "over"].filter(metric);
+  for (const p of rosterPlayers()) {
+    const mine = DATA.rows.filter(r => r.player === p && inRoster(r) && inPhase(r));
     const ago = r => (end - parseDate(r.date)) / DAY;
     const now = addUp(mine.filter(r => ago(r) < 30));
     const before = addUp(mine.filter(r => ago(r) >= 30 && ago(r) < 60));
@@ -408,7 +485,7 @@ function buildSeries() {
   const list = [...periods.values()].sort((a, b) => a.key < b.key ? -1 : 1);
   const perDay = {};
   list.forEach(p => { perDay[p.date] = (perDay[p.date] || 0) + 1; p.nth = perDay[p.date]; });
-  const series = DATA.players.map(name => ({
+  const series = rosterPlayers().map(name => ({
     name, color: color(name), team: false,
     values: list.map(p => { const t = addUp(p.rows.filter(r => r.player === name)); return { v: m.teamOnly ? null : m.f(t), min: t.minutes }; }),
   }));
@@ -595,7 +672,7 @@ function renderWinLoss() {
     head2.append(el("th", { text: "Wins" }), el("th", { text: "Losses" }));
   });
   const body = el("tbody");
-  const who = [...DATA.players, "Team average"];
+  const who = [...rosterPlayers(), "Team average"];
   for (const p of who) {
     const mine = p === "Team average" ? rows : rows.filter(r => r.player === p);
     const w = addUp(mine.filter(r => r.result === "Win")), l = addUp(mine.filter(r => r.result === "Lose"));
@@ -612,18 +689,25 @@ function renderWinLoss() {
 function renderSessions() {
   const rows = filteredRows(true);
   const head = el("tr", {}, ...["Date", "Games", "W–L", "Minutes", "Info/10 min", "Main shotcallers", "Positivity"].map(t => el("th", { text: t })));
-  DATA.players.forEach(p => head.append(el("th", { text: p })));
+  rosterPlayers().forEach(p => head.append(el("th", { text: p })));
   const body = el("tbody");
   const info = metric("info"), pos = metric("positivity"), share = metric("share");
-  for (const s of [...DATA.sessions].reverse()) {
-    const mine = rows.filter(r => r.session === s.session);
+  const sessions = new Map();
+  for (const g of gamesPlayed()) {
+    if (!sessions.has(g.session)) sessions.set(g.session, { date: g.date, games: 0, wins: 0, losses: 0, minutes: 0 });
+    const s = sessions.get(g.session);
+    s.minutes += g.minutes;
+    if (g.game) { s.games++; s.wins += g.result === "Win"; s.losses += g.result === "Lose"; }
+  }
+  for (const [id, s] of [...sessions.entries()].sort((a, b) => a[1].date < b[1].date ? 1 : -1)) {
+    const mine = rows.filter(r => r.session === id);
     if (!mine.length) continue;
     const t = addUp(mine);
     const tr = el("tr", {}, el("td", { text: dayName(parseDate(s.date)) }), el("td", { text: s.games || "–" }),
       el("td", { text: s.games ? `${s.wins}–${s.losses}` : "–" }), el("td", { text: Math.round(s.minutes) }),
       el("td", { text: fmt(info.f(t), info) }), el("td", { text: fmt(mainShotcallers(mine), metric("callers")) }),
       el("td", { text: fmt(pos.f(t), pos) }));
-    DATA.players.forEach(p => {
+    rosterPlayers().forEach(p => {
       const v = share.f(addUp(mine.filter(r => r.player === p)));
       const td = el("td");
       if (v != null) td.append(el("span", { class: "bar", style: `width:${Math.max(2, v * 0.6)}px;background:${color(p)}` }), fmt(v, share));
@@ -635,6 +719,37 @@ function renderSessions() {
   $("sessions").replaceChildren(el("table", {}, el("thead", {}, head), body));
 }
 
+// ---------- flame and negative comments ----------
+const clockText = s => s == null ? "between games" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+function renderQuotes() {
+  const kind = $("q-kind").value, who = $("q-player").value;
+  const list = (DATA.quotes || []).filter(q => (kind === "all" || q.kind === "Flame") && (!who || q.player === who)
+    && inRange(q) && (ROSTERS.length < 2 || q.roster === state.roster || !q.roster)
+    && (state.result === "all" || (q.game && gameResult(q) === state.result)));
+  const wrap = $("quotes");
+  if (!list.length) {
+    wrap.replaceChildren(el("p", { class: "empty", text: kind === "Flame" ? "No flame in this range. 👍" : "Nothing negative in this range." }));
+    return;
+  }
+  const head = el("tr", {}, ...["When", "Game", "Who", "Type", "What they said"].map(t => el("th", { text: t })));
+  const body = el("tbody");
+  for (const q of [...list].reverse()) {
+    const said = el("td", { style: "white-space:normal;text-align:left;min-width:280px" }, `“${q.text}”`);
+    if (q.text_en) said.append(el("div", { class: "note", style: "margin:2px 0 0", text: "→ " + q.text_en }));
+    body.append(el("tr", {},
+      el("td", { text: `${dayName(parseDate(q.date))} ${q.time}` }),
+      el("td", { text: q.game ? `Game ${q.game}, ${clockText(q.clock)}${q.phase ? " (" + q.phase + ")" : ""}` : "between games" }),
+      el("td", { style: "text-align:left", text: q.player + (q.on_roster ? "" : " (not on roster)") }),
+      el("td", { style: "text-align:left;color:" + (q.kind === "Flame" ? "var(--bad)" : "var(--ink-2)"), text: q.kind === "Flame" ? "Flame" : "Other negative" }),
+      said));
+  }
+  wrap.replaceChildren(el("table", {}, el("thead", {}, head), body));
+}
+const gameResult = q => ((DATA.games || []).find(g => g.session === q.session && g.game === q.game) || {}).result;
+[...new Set((DATA.quotes || []).map(q => q.player))].sort().forEach(n => $("q-player").append(el("option", { value: n, text: n })));
+$("q-kind").addEventListener("change", renderQuotes);
+$("q-player").addEventListener("change", renderQuotes);
+
 // ---------- definitions ----------
 function renderDefs() {
   const dl = $("defs");
@@ -644,7 +759,7 @@ function renderDefs() {
 }
 
 // ---------- wire up ----------
-function renderAll() { renderChart(); renderWinLoss(); renderSessions(); }
+function renderAll() { renderChart(); renderWinLoss(); renderQuotes(); renderSessions(); }
 const sel = $("f-metric");
 for (const g of [...new Set(METRICS.map(m => m.group))]) {
   const og = el("optgroup", { label: g });
@@ -655,8 +770,17 @@ sel.value = state.metric;
 sel.addEventListener("change", () => { state.metric = sel.value; renderChart(); });
 $("f-group").value = state.group;
 $("f-group").addEventListener("change", e => { state.group = e.target.value; renderChart(); });
-$("f-result").addEventListener("change", e => { state.result = e.target.value; renderChart(); });
-$("f-range").addEventListener("change", e => { state.range = +e.target.value; renderAll(); });
+$("f-result").addEventListener("change", e => { state.result = e.target.value; renderChart(); renderQuotes(); });
+$("f-range").addEventListener("change", e => { state.range = +e.target.value; renderSummary(); renderAll(); });
+$("f-phase").addEventListener("change", e => { state.phase = e.target.value; renderCards(); renderAll(); });
+if (ROSTERS.length > 1) {
+  $("roster-label").hidden = false;
+  ROSTERS.forEach(r => $("f-roster").append(el("option", { value: r.name, text: r.name })));
+  $("f-roster").addEventListener("change", e => {
+    state.roster = e.target.value; state.hidden.clear();
+    renderSummary(); renderCards(); renderAll();
+  });
+}
 $("table-toggle").addEventListener("click", e => {
   state.table = !state.table;
   $("chart-table").hidden = !state.table;

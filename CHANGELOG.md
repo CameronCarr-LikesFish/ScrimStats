@@ -1,4 +1,4 @@
-# Changelog: LoL Scrim Comms
+# Changelog: ScrimStats
 
 This changelog covers the whole history of the project. It records what was
 built, what broke, why it broke, how it was fixed, and how each piece was
@@ -21,6 +21,196 @@ before 2.0.0 were assigned after the fact, to give the history a clear order.
 **Test machine:** Windows 11 Home (10.0.26200), Python 3.14.4, AMD Ryzen 5
 7600X, AMD Radeon RX 7900 GRE, 31 GB RAM. The League game patch during
 development was 16.19.
+
+---
+
+## [2.4.0]: 2026-10-08: Rosters, game phases, vision, resources, flame
+
+Asked for after reviewing the first real scrim. The request was:
+
+- Rename the repository to ScrimStats.
+- Find out why an item call before a dragon in game 2 didn't count. The guess
+  was that the player said "LDR", or said it two minutes early and then asked
+  for gold.
+- New stats: asking for resources, wards placed, ward talk, and flame at
+  teammates.
+- Accountability per play, not per 10 minutes.
+- Every stat split into laning phase, mid game, and late game.
+- A JV roster next to the varsity one, with a Rosters tab.
+
+### Why the item call didn't count
+
+The transcript has the call, about two minutes before the dragon. Over half
+a minute, the player:
+
+- said to play for the next drake and that they needed all the gold they
+  could get
+- asked for the gold
+- said they needed "LTR". This is "LDR" (Lord Dominik's Regards), misheard.
+
+Two things stopped it counting:
+
+1. **The game recording has no dragons at all.** League's live data feed
+   doesn't tell spectators about dragons, barons or heralds. Across the
+   whole scrim (3 games, all spectated) there are 0 `DragonKill` events,
+   0 `BaronKill` and 0 `HeraldKill`, and only 2 `HordeKill` (grubs). Games
+   played on this PC have them (2–4 dragons per game). With no objectives in
+   the data, "item timers before objectives" could only ever be 0 or blank
+   for spectated games.
+2. **The words didn't match.** "LTR" wasn't recognised as an item, and "I need
+   … gold" with the "I" five words away fell outside the "about yourself"
+   rule.
+
+### Added
+
+- **A player's recording can be joined with a spectator's.** One of the five
+  players runs ScrimStats and clicks Start recording. Afterwards their files
+  go into the spectator's app with **Games → Add a player's recordings…**.
+  They're joined automatically (same players and champions, as with rewind
+  pieces).
+  - The game then has the dragons and barons from the player's feed.
+  - The player's feed is live, so that game needs no spectator delay. Its
+    timeline comes only from the player's file.
+  - The Games tab shows it as "Spectator + player", with an Objectives count
+    ("not shown" for spectator-only games).
+- **Rosters (Varsity, JV…).** The Roster tab is now **Rosters**, with one tab
+  per roster: add, rename, delete.
+  - Each player has a **Role** (Top, Jungle, Mid, Bot, Support).
+  - A sub can be on two rosters under the same name. Their accounts and role
+    stay in step on both.
+  - `Roster.txt` now has `[Roster name]` lines and a 4th column, Role. Older
+    files still load: their players form one roster.
+  - Each game counts for the roster most of its players are on.
+  - The dashboard has a **Roster** picker, and colors, cards, chart lines and
+    tables follow the chosen roster.
+- **Early / mid / late game.** Every stat can be seen for the whole game or
+  one part of it (dashboard: **Part of game**; CSV: a `part_of_game` column
+  with `all`, `early`, `mid`, `late` rows).
+  - **Early (laning)** lasts, per player, until the first outer tower in
+    their lane falls (either team's), and at most until 20:00. Junglers (role
+    Jungle, or Smite in newer recordings): the first outer tower anywhere.
+    No role: bot lane, as suggested.
+  - **Mid** runs until 30:00, or until the first inhibitor falls if that's
+    sooner.
+  - **Late** is the rest.
+  - Real scrim: the bot lane's first tower fell at 14.8, 16.4 and 17.9 min;
+    top's at 19.8, 19.4 and 13.4.
+- **Asking for resources** (new type `Resources`): "I need gold", "can I get
+  the wave", "give me the camp", "every bit of gold", plus Chinese (我要钱,
+  经济给我…). Real scrim: 3 lines, all of them the gold requests above.
+- **Vision**, a new dashboard group:
+  - Three kinds of ward talk:
+    - **Warding:** placing wards and where they are, ours or theirs.
+    - **Asking for vision:** "no vision", "can someone ward", "buy pinks".
+    - **Sweeping:** "sweep", "deward", "kill the ward".
+  - **Vision talk** counts any of them, once per line. A line that's a
+    request or a sweep isn't also counted as warding.
+  - **Vision score per 10 min:** League's own scoreboard number. The live
+    feed has no "wards placed" count, so this is the closest. The recorder
+    now saves everyone's scores every 30 s (level, K/D/A, CS, vision score,
+    item IDs) plus summoner spells, so the stats can see how much vision each
+    player added in each part of the game. Only games recorded with 2.4 or
+    newer have it.
+- **Flame and negative comments**, a new dashboard section (asked for midway
+  through this release: flame should always be quoted directly, for
+  accountability).
+  - Every line counted as flame, **word for word**, with the date and time,
+    the game, the game clock and part of the game, and who said it.
+  - **Other negative** adds swearing and frustration that wasn't aimed at
+    anyone. It's shown, but it doesn't count against them.
+  - It follows the roster, time range and wins/losses filters, and has its
+    own player filter. Chinese lines show their translation.
+  - Lines said between games are included, marked "between games".
+  - The quotes stay in the local dashboard. Nothing is uploaded or committed.
+  - Real scrim: 4 flame lines, 168 other negative lines.
+- **Item nicknames:** about 80 more (lord doms, BT, RFC, mercs, tabis,
+  steraks, youmuus…). Item nicknames moved up in League words, so they
+  always fit in the speech model's hints.
+- **Corrections:** `ltr => LDR`, and "Lord Dominic's" spellings.
+
+### Changed
+
+- **Flame replaces "frustration at teammates".** The old rule counted any
+  swear word with "you" anywhere in the line. In the real scrim that was 29
+  lines, almost none of them flame: an excited swear with "you" later in the
+  sentence, a "how do you" question about Discord settings, and someone
+  saying they're "not stupid" to a teammate.
+  - **Flame** now needs a blaming or insulting phrase ("what are you doing",
+    "why did you", "useless", "stop inting", "你在干嘛"…) with "you" or a
+    teammate's name within 5 words (6 characters of 你 in Chinese).
+  - Swearing on its own is **Frustration**, which isn't scored.
+  - Real scrim: 3 lines, all mild "why are you…" questions.
+  - Positivity and blame after death use flame.
+  - An edited `Callout types.txt` without a `Flame:` line uses its
+    Frustration phrases with the new 5-word rule.
+- **Accountability is per 10 plays.** A play is any fight with a kill in it
+  (kills less than 15 s apart are one fight) or an objective taken. It needs
+  at least 5 plays.
+- **Item or gold talk before objectives** (was "item timers before
+  objectives"):
+  - It counts item talk or a resource request.
+  - The window is 2½ minutes before the objective (was 90 s), since the real
+    call was about two minutes early.
+- **Corrections now apply to the stats immediately**, including for older
+  transcripts. The transcript text itself only changes when re-transcribed.
+- **Game length is the real game.** A game now runs from game clock 0 to the
+  furthest moment seen, in real time. Before, it ran from when recording
+  started to when the last file closed. A spectator who keeps rewinding after
+  the end had stretched the scrim's 3 games to 127 minutes; they're now 82.
+- **Repeated events are found with a 3-second tolerance.** A rewind replays
+  an event with a new ID, and its time can differ by hundredths of a second
+  (a tower at 29.16 and again at 29.18), which got past the old exact-time
+  check. A multikill's size is part of what makes it unique, so a double kill
+  and the triple kill right after aren't merged. The recorder and the stats
+  share this check, in `common.py`.
+- **Missing roles:** the dashboard warns about players with an account but no
+  role.
+
+### Decisions
+
+- **Tower lane numbers.** The game now names towers like
+  `Turret_TOrder_L0_P3`. P3 is the outer tower, and the two nexus towers are
+  L1 (mid). Which of L0 and L2 is top wasn't documented anywhere we could
+  find. It was worked out from the scrim: Garen, Jayce and Aatrox took the L2
+  towers and Ashe got first tower on L0, so L2 is top and L0 is bot. The
+  older `Turret_T1_L/C/R_03` names are understood too.
+- **Vision score, not wards placed.** The live feed has no ward count, and the
+  post-game stats that do aren't available to a spectator.
+- **The flame list is deliberately narrow.** A missed flame line costs less
+  than calling a teammate toxic for "holy shit, you're alive".
+
+### Verified
+
+- **Real scrim (2026-10-07, copy of the data):**
+  - 3 games found, 82 minutes in all, with 0 duplicate towers.
+  - Laning phases: 52 min early, 27 min mid, 3 min late (short games).
+  - The missed call now counts: the gold request and "I need LTR" count as
+    item talk, and three lines count as resources. It still can't
+    count toward objectives, because the dragons aren't in the spectator data.
+- **Rosters tab, in the browser with a stand-in backend:**
+  - add a roster
+  - add a sub (accounts and role copied)
+  - rename, then change the role (follows on both rosters)
+  - save (correct `[Roster]` file), delete
+- **Dashboard with Varsity and JV:**
+  - roster and part-of-game pickers
+  - accountability per play
+  - main shotcallers per game across phase rows (1.3)
+  - no console errors
+- **Recorder dry run:** the `scores` line is written correctly. "#" players use
+  their summoner name.
+- **Settings:** unedited 2.3 settings files upgrade, via the new
+  `OLD_DEFAULTS` hash.
+
+### Known limitations
+
+- **Spectator-only games** still have no dragons or barons, unless a player
+  records too.
+- **Vision score** starts with games recorded from now on.
+- **Roles** have to be set by hand. Custom games report every player's
+  position as "NONE"; only junglers are spotted, by Smite.
+- **Late game** is short in most scrims, so its numbers will be noisy until
+  there's more data.
 
 ---
 

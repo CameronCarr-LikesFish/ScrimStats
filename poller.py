@@ -10,7 +10,8 @@ stamped with BOTH the real-world time ("wall_clock") and the in-game clock
 File contents, one JSON object per line:
   meta        first line: version, start time, timezone
   clock_sync  every 10 s: one (wall_clock, game_time) pair
-  players     once: which player is on which champion
+  players     once: which player is on which champion (and their summoner spells)
+  scores      every 30 s: each player's level, K/D/A, CS, vision score and items
   event       each game event exactly as the game reported it, plus the
               wall_clock and game_time of the poll that first saw it
   end         last line, when the file closes normally
@@ -26,7 +27,7 @@ from datetime import datetime, timezone
 import requests
 import urllib3
 
-from common import VERSION
+from common import VERSION, SeenEvents
 
 API_BASE = "https://127.0.0.1:2999/liveclientdata"
 POLL_INTERVAL_S = 1.0
@@ -37,6 +38,7 @@ HEARTBEAT_INTERVAL_S = 60.0
 REQUEST_TIMEOUT_S = (1.0, 2.0)
 GAME_GONE_AFTER_S = 5.0          # silence this long = the game closed
 PLAYERS_CHECK_S = 10.0           # how often to check the player list (new game?)
+SCORES_INTERVAL_S = 30.0         # how often to save everyone's scores (vision score etc.)
 
 # The game uses a self-signed certificate; the connection never leaves this PC.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -58,13 +60,6 @@ def format_game_clock(seconds):
     except (TypeError, ValueError):
         return "??:??"
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
-
-
-def event_key(event):
-    """What makes an event the same event: its type, when, and who."""
-    return (event.get("EventName"), round(float(event.get("EventTime") or 0), 1),
-            event.get("KillerName"), event.get("VictimName"), event.get("DragonType"),
-            event.get("TurretKilled"), event.get("InhibKilled"), event.get("Acer"))
 
 
 def signature(players):
@@ -93,7 +88,7 @@ class GameRecording:
         self.path = path
         self.file = open(path, "x", encoding="utf-8", newline="\n")
         self.seen_event_ids = set()
-        self.seen_event_keys = set()    # (type, game time, who) of events already written
+        self.seen_events = SeenEvents()  # to skip events a spectator rewind replays
         self.events_logged = 0
         self.last_game_time = game_time
         self.last_clock_sync = None
@@ -104,6 +99,7 @@ class GameRecording:
         self.champion_of = {}
         self.signature = None           # who's playing (to spot a new game)
         self.last_players_check = 0.0
+        self.last_scores = 0.0
         self.rewind_noted = False
         self.write({
             "type": "meta",
@@ -221,6 +217,8 @@ class Poller:
                 self.start_recording(wall_clock, game_time)
                 rec = self.recording
                 self.try_record_players(wall_clock, game_time)
+            elif isinstance(players, list) and players and now - rec.last_scores >= SCORES_INTERVAL_S:
+                self.record_scores(players, wall_clock, game_time)
 
         feed = self.fetch("eventdata")
         events = feed.get("Events") if isinstance(feed, dict) else None
@@ -248,14 +246,11 @@ class Poller:
         rec = self.recording
         new_events = [e for e in events
                       if isinstance(e, dict) and e.get("EventID") not in rec.seen_event_ids]
-        # A spectator rewind replays events with NEW IDs; skip exact repeats.
+        # A spectator rewind replays events with NEW IDs; skip the repeats.
         for event in list(new_events):
-            key = event_key(event)
-            if key in rec.seen_event_keys:
+            if rec.seen_events.is_repeat(event):
                 rec.seen_event_ids.add(event.get("EventID"))
                 new_events.remove(event)
-            else:
-                rec.seen_event_keys.add(key)
         if rec.first_event_batch and new_events and game_time > 60:
             self.log(f"  (Started mid-game: catching up on {len(new_events)} earlier events.)")
         rec.first_event_batch = False
@@ -288,8 +283,12 @@ class Poller:
                 if name and champion:
                     rec.champion_of[name] = champion
                     rec.champion_of[name.split("#")[0]] = champion
-            summary.append({key: p.get(key) for key in
-                            ("riotId", "summonerName", "championName", "team", "position", "isBot")})
+            entry = {key: p.get(key) for key in
+                     ("riotId", "summonerName", "championName", "team", "position", "isBot")}
+            spells = p.get("summonerSpells") or {}
+            entry["spells"] = [str((spells.get(k) or {}).get("displayName", ""))
+                               for k in ("summonerSpellOne", "summonerSpellTwo")]
+            summary.append(entry)
         # A spectator has no "active player" of their own.
         active = self.fetch("activeplayername")
         spectator = not (isinstance(active, str) and active.strip())
@@ -300,6 +299,26 @@ class Poller:
         rec.last_players_check = now
         if spectator:
             self.log("  (Watching as a spectator.)")
+        self.record_scores(players, wall_clock, game_time)
+
+    def record_scores(self, players, wall_clock, game_time):
+        """Everyone's numbers right now. Vision score only exists as a running
+        total, so saving it every 30 s lets the stats see how much each player
+        added in each part of the game."""
+        rows = []
+        for p in players:
+            if not isinstance(p, dict):
+                continue
+            s = p.get("scores") or {}
+            riot = p.get("riotId") or ""
+            rows.append({"id": riot if riot not in ("", "#") else p.get("summonerName"),
+                         "level": p.get("level"), "kills": s.get("kills"), "deaths": s.get("deaths"),
+                         "assists": s.get("assists"), "cs": s.get("creepScore"),
+                         "vision": s.get("wardScore"),
+                         "items": [i.get("itemID") for i in p.get("items") or [] if isinstance(i, dict)]})
+        self.recording.write({"type": "scores", "wall_clock": wall_clock, "game_time": game_time,
+                              "players": rows})
+        self.recording.last_scores = time.monotonic()
 
     def describe(self, event):
         """One readable line for the app window (the file gets the raw event)."""
