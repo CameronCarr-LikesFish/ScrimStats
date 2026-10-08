@@ -62,6 +62,29 @@ def format_game_clock(seconds):
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
+def league_client_game():
+    """Ask the League client on this PC (not the game) whether the current
+    game is a custom game: {"custom": True/False, "queue": id}, or None if
+    the client can't be reached. The client's port and password are on its
+    own command line; they're only used for this one local question."""
+    import subprocess
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "(Get-CimInstance Win32_Process -Filter \"name='LeagueClientUx.exe'\").CommandLine"],
+            capture_output=True, text=True, timeout=15, creationflags=0x08000000).stdout   # no window
+        port = re.search(r"--app-port=(\d+)", out)
+        token = re.search(r"--remoting-auth-token=([\w-]+)", out)
+        if not (port and token):
+            return None
+        session = requests.get(f"https://127.0.0.1:{port.group(1)}/lol-gameflow/v1/session",
+                               auth=("riot", token.group(1)), verify=False, timeout=5).json()
+        data = session.get("gameData") or {}
+        return {"custom": bool(data.get("isCustomGame")), "queue": (data.get("queue") or {}).get("id")}
+    except Exception:
+        return None
+
+
 def signature(players):
     """Who's in the game: the same set of players and champions = the same game."""
     return tuple(sorted(f"{p.get('riotId') or p.get('summonerName')}|{p.get('championName')}"
@@ -298,8 +321,16 @@ class Poller:
             for p in players:
                 if isinstance(p, dict) and active in (p.get("riotId"), p.get("summonerName")):
                     active_team = p.get("team")
+        # Which kind of game: CLASSIC on map 11 is Summoner's Rift (ARAM, Arena
+        # and the practice tool have their own modes).
+        stats = self.fetch("gamestats") or {}
+        client = league_client_game() if not spectator else None
         rec.write({"type": "players", "wall_clock": wall_clock, "game_time": game_time,
-                   "spectator": spectator, "active_team": active_team, "players": summary})
+                   "spectator": spectator, "active_team": active_team,
+                   "game_mode": stats.get("gameMode"), "map": stats.get("mapNumber"),
+                   "custom_game": client["custom"] if client else None,
+                   "queue_id": client["queue"] if client else None,
+                   "players": summary})
         rec.players_written = True
         rec.signature = signature(players)
         rec.last_players_check = now

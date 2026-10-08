@@ -39,9 +39,10 @@ GAMES
    spectator delay is 3 minutes), set it here so the game lines up with
    the comms.
    Spectating? League doesn't tell spectators about dragons, barons or
-   heralds. Have one of the five players run ScrimStats too and click
-   "Start recording". After scrims they send you the new files from their
-   "Game recordings" folder, and you click "Add a player's recordings...".
+   heralds. Give one of the five players ScrimStats Recorder: the steps are
+   on the Games tab (a Discord webhook, then "Make recorder for a
+   teammate...", then a bot so the app can read the channel). Their games
+   then arrive in your app by themselves through Discord.
    Drafted on drafter.lol? Paste the draft's link under "Drafts from
    Drafter.lol" (one link covers the whole series). Picks, bans, sides and
    pick order then show up in the dashboard's Champions table.

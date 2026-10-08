@@ -105,6 +105,10 @@
   .players { display: grid; gap: 10px; }
   .player { display: grid; grid-template-columns: 220px 1fr 40px; gap: 12px; align-items: start;
     padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--raised); }
+  ol.steps { padding-left: 20px; margin: 10px 0; }
+  ol.steps li { margin-bottom: 12px; color: var(--ink-2); }
+  ol.steps li b { color: var(--ink); }
+  code { font-size: 13px; background: var(--hover); padding: 1px 5px; border-radius: 4px; }
   .player .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
 </style>
 </head>
@@ -225,12 +229,32 @@
     <p class="sub">Every recorded game. Spectating can show the game late; set the delay for those games so their events line up with the comms.</p>
     <div class="card">
       <h2>Spectating? Have a player record too</h2>
-      <p class="hint" style="margin-top:0">League doesn't tell spectators about dragons, barons or heralds, so "item or gold talk before
-        objectives" can't be worked out from a spectator's recording, and a spectator may see the game late. Fix: one of the five
-        players also runs ScrimStats and clicks <b>Start recording</b> (they don't need Craig or the rest). Afterwards they send you the
-        new files from their <b>Game recordings</b> folder, and you add them here. They're joined with yours automatically,
-        and that game then needs no delay.</p>
-      <div class="row" style="margin-top:10px"><button class="plain" id="add-games">Add a player's recordings…</button><span class="saved" id="games-added"></span></div>
+      <p class="hint" style="margin-top:0">League doesn't tell spectators about dragons, barons or heralds, and a spectator may see
+        the game late. A player's recording has neither problem. Give one player <b>ScrimStats Recorder</b>, a small program
+        that records their games and posts each one to a private Discord channel the moment it ends. ScrimStats picks them up
+        from there and joins them with your spectated games.</p>
+      <ol class="steps">
+        <li><b>Make a private channel</b> in your Discord server (for example <code>#scrim-data</code>). In its settings:
+          Integrations → Webhooks → New Webhook → Copy Webhook URL. Paste it here:
+          <div class="row" style="margin-top:6px"><input type="text" id="dc-webhook" placeholder="https://discord.com/api/webhooks/…" style="flex:1">
+            <button class="plain" id="dc-save-webhook">Save</button></div></li>
+        <li><b>Make the recorder</b> for the player and send them the zip (Discord DM is fine). They unzip it and double-click
+          <b>ScrimStats Recorder.exe</b> before scrims.
+          <div class="row" style="margin-top:6px"><button class="plain" id="dc-make">Make recorder for a teammate…</button></div></li>
+        <li><b>Let ScrimStats read the channel</b> (once): at <a href="#" id="dc-portal">discord.com/developers/applications</a>,
+          New Application → Bot → Reset Token, copy the token. On the same page turn on <b>Message Content Intent</b>.
+          Then OAuth2 → URL Generator: tick <b>bot</b>, then <b>View Channels</b> and <b>Read Message History</b>; open the link
+          and add the bot to your server. Paste the token and the channel's link (right-click the channel → Copy Link):
+          <div class="row" style="margin-top:6px">
+            <input type="password" id="dc-token" placeholder="Bot token" style="flex:1" autocomplete="off">
+            <input type="text" id="dc-channel" placeholder="https://discord.com/channels/…" style="flex:1">
+            <button class="plain" id="dc-save-bot">Save</button>
+          </div></li>
+      </ol>
+      <div class="row"><button class="plain" id="dc-check">Check Discord now</button><span class="muted" id="dc-status"></span></div>
+      <p class="hint">New games are also fetched every time you open the Dashboard or this tab. The webhook link and bot token stay
+        on this PC (in <code>_data</code>).</p>
+      <div class="row" style="margin-top:10px"><button class="plain" id="add-games">Add a player's recordings from files…</button><span class="saved" id="games-added"></span></div>
     </div>
     <div class="card">
       <h2>Drafts from Drafter.lol</h2>
@@ -519,9 +543,10 @@ $("save-roster").addEventListener("click", async () => {
 
 // ---------- games ----------
 loaders.games = async () => {
+  await api.check_discord(true);                 // quietly fetch any new games first
   const games = await api.games();
   const body = $("games"); body.replaceChildren();
-  renderDrafts();
+  renderDrafts(); renderDiscord();
   if (!games.length) { body.append(el("tr", {}, el("td", { colspan: "8", class: "muted", text: "No recorded games yet." }))); return; }
   for (const g of games) {
     const sel = el("select", { "aria-label": "Spectator delay" });
@@ -549,6 +574,37 @@ loaders.games = async () => {
           : el("span", { class: "muted", text: g.player_view ? "not needed" : "—" }))));
   }
 };
+
+// ---------- teammate recorder / Discord ----------
+async function renderDiscord() {
+  const d = await api.discord_settings();
+  if (document.activeElement !== $("dc-webhook")) $("dc-webhook").value = d.webhook || "";
+  if (document.activeElement !== $("dc-channel")) $("dc-channel").value = d.channel || "";
+  $("dc-token").placeholder = d.bot ? "Bot token saved (paste a new one to replace it)" : "Bot token";
+  $("dc-make").disabled = !d.webhook;
+  $("dc-check").disabled = !(d.bot && d.channel);
+  $("dc-status").textContent = d.last_checked ? `Last checked ${d.last_checked}: ${d.last_added} new` : (d.bot && d.channel ? "Not checked yet" : "");
+}
+async function saveDiscord(changes, button) {
+  const r = await api.save_discord(changes);
+  $("dc-status").textContent = r.message; $("dc-status").style.color = r.ok ? "" : "var(--bad)";
+  if (r.ok) { $("dc-token").value = ""; renderDiscord(); }
+}
+$("dc-save-webhook").addEventListener("click", () => saveDiscord({ webhook: $("dc-webhook").value.trim() }));
+$("dc-save-bot").addEventListener("click", () => saveDiscord({ bot_token: $("dc-token").value.trim() || null, channel: $("dc-channel").value.trim() }));
+$("dc-make").addEventListener("click", async () => {
+  const name = prompt("Who is this recorder for? (Their name shows on each game they send.)");
+  if (!name || !name.trim()) return;
+  const r = await api.make_recorder(name.trim());
+  $("dc-status").textContent = r.message; $("dc-status").style.color = r.ok ? "" : "var(--bad)";
+});
+$("dc-check").addEventListener("click", async () => {
+  $("dc-status").textContent = "Checking…"; $("dc-status").style.color = "";
+  const r = await api.check_discord();
+  $("dc-status").textContent = r.message; $("dc-status").style.color = r.ok ? "" : "var(--bad)";
+  if (r.ok && r.added) loaders.games();
+});
+$("dc-portal").addEventListener("click", e => { e.preventDefault(); api.open_link("https://discord.com/developers/applications"); });
 
 async function renderDrafts() {
   const list = await api.drafts();

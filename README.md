@@ -47,7 +47,8 @@ the two up on one clock, and tracks each player's comms habits over months.
    signed. Click **More info → Run anyway**.
 2. Read **`How to use.txt`** next to the `.exe`. In short:
    - Click **Start recording** before a scrim block. If you spectate, have
-     one player record too: spectators aren't told about dragons or barons.
+     one player run ScrimStats Recorder (Games tab): spectators aren't told
+     about dragons or barons, and their games reach you through Discord.
    - Afterwards, use **Add Craig download…** and then **Transcribe**.
    - Set up your rosters in the **Rosters** tab, then open **Dashboard**.
 3. The first transcription downloads the speech model (about 0.5 GB), once.
@@ -90,7 +91,10 @@ a different data folder.
 | `common.py` | Where every folder lives |
 | `defaults/` | Starting settings: callout phrase lists, League words, nicknames, corrections |
 | `gpu-engine/` | How to build the graphics-card engine (whisper.cpp + Vulkan), and the patch it needs |
-| `build.py` | Packages the `.exe` |
+| `recorder.py` | ScrimStats Recorder: the small recorder a teammate runs; posts each game to Discord |
+| `discord_link.py` | Posting games to a Discord channel, and pulling them into the app |
+| `display.py` | Sharp on every monitor (per-monitor scaling) |
+| `build.py` | Packages the `.exe` (and the recorder) |
 
 The app's font is [Lato](https://www.latofonts.com/) by Łukasz Dziedzic, included under the
 SIL Open Font License (`ui/fonts/OFL.txt`).

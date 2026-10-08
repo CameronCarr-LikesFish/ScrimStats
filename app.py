@@ -213,6 +213,7 @@ class Api:
 
     def dashboard(self):
         import analytics
+        self.check_discord(quiet=True)          # new games from teammates first
         lines = []
         analytics.build(self._paths, log=lines.append, open_browser=False, open_roster=False)
         html = self._paths.dashboard.read_text(encoding="utf-8")
@@ -328,6 +329,80 @@ class Api:
         import analytics
         analytics.remove_drafter_link(self._paths, str(series_id))
         return True
+
+    # ----- teammate recorder / Discord -----
+
+    def discord_settings(self):
+        import discord_link
+        s = discord_link.load_settings(self._paths)
+        return {"webhook": s.get("webhook", ""), "channel": s.get("channel", ""), "bot": bool(s.get("bot_token")),
+                "last_checked": s.get("last_checked"), "last_added": s.get("last_added", 0)}
+
+    def save_discord(self, changes):
+        import discord_link
+        changes = {k: (v.strip() if isinstance(v, str) else v) for k, v in (changes or {}).items()}
+        if changes.get("webhook") and not discord_link.valid_webhook(changes["webhook"]):
+            return {"ok": False, "message": "That isn't a Discord webhook link (Integrations → Webhooks → Copy Webhook URL)."}
+        if "channel" in changes and changes["channel"] and not discord_link.channel_id(changes["channel"]):
+            return {"ok": False, "message": "That isn't a channel link (right-click the channel → Copy Link)."}
+        discord_link.save_settings(self._paths, **{k: v for k, v in changes.items() if k in ("webhook", "bot_token", "channel")})
+        return {"ok": True, "message": "Saved ✓"}
+
+    def make_recorder(self, name):
+        """A zip with ScrimStats Recorder, already connected to the channel."""
+        import zipfile
+        import webview
+        import discord_link
+        webhook = discord_link.load_settings(self._paths).get("webhook", "")
+        exe = bundled("recorder") / "ScrimStats Recorder.exe"
+        if not discord_link.valid_webhook(webhook):
+            return {"ok": False, "message": "Save the webhook link first (step 1)."}
+        if not exe.exists():
+            return {"ok": False, "message": "The recorder isn't included in this copy of the app (run it from the built app)."}
+        safe = re.sub(r"[^\w -]", "", name)[:30].strip() or "teammate"
+        target = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=str(Path.home() / "Downloads"),
+                                                 save_filename=f"ScrimStats Recorder ({safe}).zip")
+        if not target:
+            return {"ok": False, "message": "Cancelled."}
+        target = Path(target if isinstance(target, str) else target[0])
+        readme = (f"ScrimStats Recorder, for {name}\n\n"
+                  "1. Unzip this folder anywhere (Desktop is fine).\n"
+                  "2. Before scrims, double-click \"ScrimStats Recorder.exe\" and leave its window open.\n"
+                  "   Windows may say it protected your PC: click More info -> Run anyway.\n"
+                  "3. Play. Each scrim is sent to the team's Discord channel when it ends.\n"
+                  "   Only custom games with 3 or more of the roster are sent. Solo queue,\n"
+                  "   duo games, ARAM and so on are never sent (they stay on your PC).\n"
+                  "4. Close the window after scrims if you like (it doesn't send other games\n"
+                  "   either way).\n\n"
+                  "Games are also kept in the \"Game recordings\" folder. If the internet\n"
+                  "drops, unsent games are sent the next time you start it.\n")
+        with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(exe, "ScrimStats Recorder/ScrimStats Recorder.exe")
+            # The roster's accounts, so only custom games with 3+ of them are sent.
+            import analytics
+            roster = sorted({rid for p in analytics.load_roster(self._paths.roster) for rid in p["riot"]})
+            z.writestr("ScrimStats Recorder/recorder.json",
+                       json.dumps({"webhook": webhook, "name": name, "roster": roster}, indent=1))
+            z.writestr("ScrimStats Recorder/Read me.txt", readme)
+        self._log(f"Made the recorder for {name}: {target.name}")
+        return {"ok": True, "message": f"Saved {target.name}. Send it to {name}."}
+
+    def check_discord(self, quiet=False):
+        import discord_link
+        try:
+            added = discord_link.pull_games(self._paths, log=self._log)
+        except Exception as error:
+            if not quiet:
+                return {"ok": False, "message": str(error) if isinstance(error, RuntimeError)
+                        else f"Couldn't reach Discord ({type(error).__name__})."}
+            self._log(f"Discord check skipped: {error}")
+            return {"ok": False, "message": str(error)}
+        return {"ok": True, "added": added, "message": f"Checked: {added} new game recording(s)."}
+
+    def open_link(self, url):
+        if str(url).startswith("https://discord.com/"):
+            import webbrowser
+            webbrowser.open(url)
 
     def set_delay(self, game_id, seconds):
         import analytics

@@ -120,6 +120,22 @@ def gpu_engine_args(sep):
     return args
 
 
+def build_recorder(icon, sep):
+    """ScrimStats Recorder: one small .exe (recording + Discord only)."""
+    out = BUILD / "recorder"
+    subprocess.run([
+        sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--console",
+        "--name", "ScrimStats Recorder", "--icon", str(icon),
+        "--distpath", str(out), "--workpath", str(BUILD / "work-recorder"), "--specpath", str(BUILD),
+        "--exclude-module", "numpy", "--exclude-module", "av", "--exclude-module", "faster_whisper",
+        "--exclude-module", "ctranslate2", "--exclude-module", "onnxruntime", "--exclude-module", "webview",
+        "--exclude-module", "tkinter", "--exclude-module", "_pywhispercpp",
+        str(HERE / "recorder.py")], check=True, cwd=HERE)
+    exe = out / "ScrimStats Recorder.exe"
+    print(f"  Recorder: {exe.stat().st_size / 1e6:.1f} MB")
+    return out
+
+
 def main():
     icons = BUILD / "champions"
     download_champion_icons(icons)
@@ -127,6 +143,7 @@ def main():
     icon = BUILD / "icon.ico"
     make_icon(icon)
     sep = ";" if sys.platform == "win32" else ":"
+    recorder = build_recorder(icon, sep)
     command = [
         sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
         "--name", APP_NAME, "--windowed", "--onedir",
@@ -138,6 +155,7 @@ def main():
         "--add-data", f"{icon}{sep}.",
         "--add-data", f"{HERE / 'ui'}{sep}ui",
         "--add-data", f"{icons}{sep}champions",
+        "--add-data", f"{recorder}{sep}recorder",
         # The app window: pywebview, using Windows' built-in WebView2 browser
         # engine through pythonnet.
         "--collect-all", "webview", "--collect-all", "pythonnet", "--collect-all", "clr_loader",
@@ -145,7 +163,7 @@ def main():
         "--collect-all", "ctranslate2",
         "--collect-all", "onnxruntime",
         "--collect-all", "tokenizers",
-        "--hidden-import", "poller", "--hidden-import", "transcriber", "--hidden-import", "analytics", "--hidden-import", "display",
+        "--hidden-import", "poller", "--hidden-import", "transcriber", "--hidden-import", "analytics", "--hidden-import", "display", "--hidden-import", "discord_link",
     ]
     command += gpu_engine_args(sep)
     command.append(str(HERE / "app.py"))

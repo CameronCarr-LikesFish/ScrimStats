@@ -24,6 +24,106 @@ development was 16.19.
 
 ---
 
+## [2.7.0]: 2026-10-08: ScrimStats Recorder for teammates, through Discord
+
+Asked for: a small program a player can run during games, ideally with a
+"more elegant, live" way to get the files back than sending them by hand.
+Chosen: the recorder posts each game to a Discord channel, and ScrimStats
+pulls them in by itself.
+
+Why it matters: a spectator's recording has no dragons, barons or heralds,
+and a spectator may see the game late. A player's recording has neither
+problem, and it's joined with the spectated one automatically (2.4.0).
+
+### Added
+
+- **ScrimStats Recorder** (`recorder.py`, built as `ScrimStats Recorder.exe`,
+  one file).
+  - It is only the game recorder plus Discord: no speech model, window or
+    dashboard.
+  - The player double-clicks it before scrims and leaves its window open.
+    Every game is recorded and kept in a "Game recordings" folder next to it.
+  - **When a game ends, the file is posted to the team's channel** through a
+    webhook ("Game recording from **Name**: game_….jsonl (193 events)").
+  - Games that couldn't be sent (no internet, window closed mid-game) are
+    sent the next time it starts. A list of sent files stops it posting
+    anything twice.
+  - **Only scrims are sent** (asked for midway: so a player's duo games
+    aren't sent). Two checks:
+    1. **It must be a custom game on Summoner's Rift.**
+       - The recorder asks the League client on the player's PC
+         (`isCustomGame`, from the client's local game-flow endpoint).
+       - First tried: matchmade games give each player a lane and custom
+         games don't. Rejected, because the team's tournament-draft scrims
+         also show lanes (TOP, JUNGLE…). ARAM, Arena and the practice tool
+         are also told apart by game mode, map and player count.
+    2. **At least 3 of the roster's accounts must be in it**, which leaves
+       room for subs. The zip's `recorder.json` carries the roster's Riot
+       IDs for this.
+    - If the client can't be asked, step 1 falls back to "Summoner's Rift
+      with 10 players".
+    - Games that don't qualify stay on the player's PC and are never posted.
+    - The recorder now also saves the game mode, map, `custom_game` and
+      queue ID in each file.
+    - **Not yet seen live:** the client check needs a real game with the
+      client open. Without the client, everything else was tested on real
+      recordings. The 3 scrims qualify; a solo-queue game (0 roster
+      accounts) and an Arena game don't; a copy of a scrim marked "not
+      custom" is refused.
+- **Games tab → "Spectating? Have a player record too"**, a three-step
+  setup:
+  1. **Webhook:** paste the private channel's webhook link.
+  2. **Make recorder for a teammate…:** asks who it's for and saves
+     `ScrimStats Recorder (Name).zip`. Inside are the program, a
+     `recorder.json` already holding the webhook link and their name, and a
+     plain-language "Read me".
+  3. **Bot:** paste the bot token and the channel link. The steps to create
+     the bot are written out on the page.
+- **Pulling games from Discord** (`discord_link.py`).
+  - Whenever the Dashboard or Games tab opens (or **Check Discord now** is
+    clicked), the bot reads the channel and copies new `game_*.jsonl`
+    attachments into Game recordings.
+  - It remembers which attachments it already took.
+  - A same-named file with different contents is kept as
+    `…_from_<sender>.jsonl`, never overwritten.
+  - Clear messages for: a wrong token, no permission to read the channel,
+    an unknown channel, and "Message Content Intent" switched off. With that
+    intent off, Discord hands the bot webhook posts with no files, so the
+    app spots that case and says so.
+- **Privacy:** the webhook link and bot token stay in `_data/discord.json`
+  on the app's PC, never in the code or the repository.
+
+### Fixed
+
+- **Lines that are only "..." no longer count as talking.** That's what the
+  speech model writes when it hears a sound but no words: a laugh, a sigh,
+  breathing, background noise. The 2026-10-07 scrim had 22 of them (of 2,977
+  lines). They didn't add words or callouts, but they did add to talking
+  time and could count as talking over someone. They're still shown in the
+  transcript.
+
+### Verified
+
+- **Fake Discord (no real requests):**
+  - posting attaches the file, with the sender's name and event count
+  - pulling imports a new game once, then nothing on the second pull
+  - a different file with the same name was saved as `…_from_RecorderBot`
+  - a bad token gives the token message; intent off gives the intent message
+  - a non-Discord webhook link is refused
+- **Recorder from source:** starts, says it isn't connected when there's no
+  `recorder.json`, waits for a game.
+- **Offline retry:** with the first send failing ("offline"), nothing was
+  marked sent. The next attempt sent both waiting games. A restart sent
+  nothing again.
+- **Games tab (browser pane, stand-in backend):**
+  - "Make recorder" stays off until a webhook is saved
+  - a bad webhook shows the error
+  - saving the bot clears the token box and shows "Bot token saved"
+  - Check Discord reports the result
+  - no console errors
+
+---
+
 ## [2.6.1]: 2026-10-08: The dashboard in tabs
 
 Asked for: the player cards shown first, and the rest split into tabs at the

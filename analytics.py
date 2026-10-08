@@ -871,7 +871,10 @@ class Roster:
 def analyze_session(path, games, roster, classifier, warnings, reviews=None, drafts=None):
     records = read_jsonl(path)
     meta = next((r for r in records if r.get("type") == "meta"), None)
-    utterances = [r for r in records if r.get("type") == "utterance"]
+    # A line with no words in it ("...") is a sound the speech model couldn't
+    # make out: a laugh, a sigh, background noise. It isn't talking.
+    utterances = [r for r in records if r.get("type") == "utterance"
+                  and (re.search(r"\w", r.get("text") or "") or has_chinese(r.get("text")))]
     if not meta:
         warnings.append(f"{path.name}: no meta line; skipped.")
         return [], set(), [], [], []
