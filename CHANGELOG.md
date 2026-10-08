@@ -24,6 +24,46 @@ development was 16.19.
 
 ---
 
+## [2.8.0]: 2026-10-08: op.gg links
+
+Asked for: a link to each player's op.gg, and a multi-search with all their
+names.
+
+### Added
+
+- **Player cards (Dashboard → Overview):** an **op.gg** link next to each
+  name, one per account ("alt 2", "alt 3" for extra accounts).
+- **op.gg multi-search** for the selected roster, above the cards.
+- **Rosters tab:**
+  - an op.gg link under each player's accounts
+  - an **op.gg multi-search** button for the roster being edited
+  - an **op.gg region** picker (NA by default), saved in
+    `_data/settings.json`
+- **Inside the app, links open in your normal web browser.** A dashboard
+  opened on its own uses ordinary links.
+
+### Decisions
+
+- **Accounts typed without a #tag** ("Spark Salesman") get their tag from
+  the recorded games, using the most common tag seen with that name. op.gg
+  needs the tag. Picking an account from the list in the Rosters tab
+  already stores it with the tag.
+- **Link formats** (checked against op.gg):
+  - profile: `op.gg/lol/summoners/<region>/<Name>-<TAG>`
+  - multi-search: `op.gg/lol/multisearch/<region>?summoners=Name#TAG,...`
+
+### Verified
+
+- All 5 roster accounts got their tags from the recordings.
+- In the app page (browser pane, stand-in backend):
+  - a link for each player, on the cards and in the Rosters tab
+  - the multi-search lists all 5
+  - changing the region to EUW changed the links
+  - clicks went to "open in browser"
+- A real profile link returned 200 from op.gg.
+
+---
+
 ## [2.7.1]: 2026-10-08: "Make recorder" and the file pickers work
 
 Reported: "Make recorder seems to do nothing."

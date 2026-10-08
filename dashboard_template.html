@@ -103,6 +103,8 @@
   .rev button[aria-pressed="true"].yes { background: var(--bad); border-color: var(--bad); color: #fff; }
   .rev button[aria-pressed="true"].no { background: var(--good); border-color: var(--good); color: #fff; }
   .checked { font-size: 12px; color: var(--ink-2); }
+  a.opgg { font-size: 12px; font-weight: 400; color: var(--s1); text-decoration: none; margin-left: 6px; }
+  a.opgg:hover { text-decoration: underline; }
   .dtabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 22px 0 0; border-bottom: 1px solid var(--grid); }
   .dtabs button { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
     padding: 10px 14px; font-size: 15px; color: var(--ink-2); margin-bottom: -1px; }
@@ -183,6 +185,7 @@
     <section>
       <h2 id="cards-title">Players: last 30 days</h2>
       <p class="note" id="cards-note"></p>
+      <p class="note" id="opgg-multi"></p>
       <div class="cards" id="cards"></div>
     </section>
 
@@ -525,7 +528,24 @@ function renderHeader() {
 }
 
 // ---------- player cards (last 30 days vs the 30 before) ----------
+// ---------- op.gg ----------
+const opggUrl = id => { const [name, tag] = id.split("#"); return `https://op.gg/lol/summoners/${DATA.region || "na"}/${encodeURIComponent(name)}-${encodeURIComponent(tag || "")}`; };
+const opggMulti = ids => `https://op.gg/lol/multisearch/${DATA.region || "na"}?summoners=${encodeURIComponent(ids.join(","))}`;
+function opggLink(url, text, title) {
+  const a = el("a", { class: "opgg", href: url, target: "_blank", rel: "noopener", text, title: title || "" });
+  // Inside the app, open it in your normal browser.
+  a.addEventListener("click", e => { if (APP) { e.preventDefault(); APP.open_link(url); } });
+  return a;
+}
+function renderOpggMulti() {
+  const ids = rosterPlayers().map(p => (DATA.accounts || {})[p] || []).map(list => list[0]).filter(Boolean);
+  const box = $("opgg-multi");
+  box.replaceChildren();
+  if (ids.length) box.append(opggLink(opggMulti(ids), `op.gg multi-search: ${ROSTERS.length > 1 ? state.roster : "the roster"} (${ids.length} players)`));
+}
+
 function renderCards() {
+  renderOpggMulti();
   const wrap = $("cards");
   wrap.replaceChildren();
   if (!latestDate) return;
@@ -539,7 +559,8 @@ function renderCards() {
     const now = addUp(mine.filter(r => ago(r) < 30));
     const before = addUp(mine.filter(r => ago(r) >= 30 && ago(r) < 60));
     const card = el("div", { class: "card pcard" },
-      el("h3", {}, el("span", { class: "key", style: `background:${color(p)}` }), el("span", { text: p })));
+      el("h3", {}, el("span", { class: "key", style: `background:${color(p)}` }), el("span", { text: p }),
+        ...(DATA.accounts && DATA.accounts[p] || []).map((id, i) => opggLink(opggUrl(id), i ? `alt ${i + 1}` : "op.gg", id))));
     if (now.minutes === 0) card.append(el("p", { class: "note", text: "No games in the last 30 days." }));
     for (const k of keys) {
       const m = metric(k), v = m.f(now), prev = m.f(before);

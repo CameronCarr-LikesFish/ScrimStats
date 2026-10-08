@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "ScrimStats"
-VERSION = "2.7.1"
+VERSION = "2.8.0"
 
 
 def app_dir():

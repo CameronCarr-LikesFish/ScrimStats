@@ -201,6 +201,10 @@
     <div class="card">
       <div class="row" style="justify-content:space-between">
         <h2 style="margin:0" id="roster-heading">Players</h2>
+        <div class="row">
+          <label class="muted" style="font-size:13px">op.gg region <select id="opgg-region" aria-label="op.gg region"></select></label>
+          <button class="plain" id="opgg-multi">op.gg multi-search</button>
+        </div>
         <div class="row"><button class="plain" id="add-player">Add player</button>
           <button class="big" id="save-roster" style="min-width:120px">Save</button><span class="saved" id="roster-saved"></span></div>
       </div>
@@ -413,7 +417,7 @@ $("tr-speaker").addEventListener("change", renderTranscript);
 // roster.players holds every roster's players: {name, discord: [], riot: [], role, roster}.
 // One person on two rosters has an entry in each, kept in step (same accounts and role).
 const ROLES = ["", "Top", "Jungle", "Mid", "Bot", "Support"];
-let roster = { rosters: [], players: [], candidates: { discord: [], riot: [] } }, showAllAccounts = false, rosterNow = null;
+let roster = { rosters: [], players: [], candidates: { discord: [], riot: [] }, accounts: {}, region: "na" }, showAllAccounts = false, rosterNow = null;
 loaders.roster = async () => {
   roster = await api.roster();
   if (!roster.rosters.length) roster.rosters = ["Varsity"];
@@ -433,6 +437,14 @@ function assign(kind, value, playerName) {
   for (const p of samePerson(playerName)) p[kind].push(value);
   unsaved(); renderRoster();
 }
+const opggUrl = id => { const [name, tag] = id.split("#"); return `https://op.gg/lol/summoners/${roster.region || "na"}/${encodeURIComponent(name)}-${encodeURIComponent(tag || "")}`; };
+$("opgg-multi").addEventListener("click", () => {
+  const ids = [...new Set(roster.players.filter(p => p.roster === rosterNow).map(p => (roster.accounts[p.name] || [])[0]).filter(Boolean))];
+  if (!ids.length) { alert("No accounts with a #tag on this roster yet: pick their accounts below."); return; }
+  api.open_link(`https://op.gg/lol/multisearch/${roster.region || "na"}?summoners=${encodeURIComponent(ids.join(","))}`);
+});
+$("opgg-region").addEventListener("change", async e => { roster.region = e.target.value; await api.set_region(e.target.value); renderRoster(); });
+
 function renderRosterTabs() {
   const tabs = $("roster-tabs"); tabs.replaceChildren();
   for (const r of roster.rosters) {
@@ -441,6 +453,9 @@ function renderRosterTabs() {
       onclick: () => { rosterNow = r; renderRoster(); } }));
   }
   $("roster-heading").textContent = rosterNow + " players";
+  const region = $("opgg-region");
+  if (!region.options.length) (roster.regions || ["na"]).forEach(r => region.append(el("option", { value: r, text: r.toUpperCase() })));
+  region.value = roster.region || "na";
   $("delete-roster").disabled = roster.rosters.length < 2;
 }
 function renderRoster() {
@@ -471,7 +486,9 @@ function renderRoster() {
       el("div", {}, el("div", { class: "lbl", text: "Name" }), name,
         el("div", { class: "lbl", text: "Role", style: "margin-top:8px" }), role,
         others.length ? el("div", { class: "muted", style: "margin-top:6px;font-size:12px", text: "Also on " + others.join(", ") }) : null),
-      el("div", {}, el("div", { class: "lbl", text: "Discord" }), chips("discord"), el("div", { class: "lbl", text: "Accounts" }), chips("riot")),
+      el("div", {}, el("div", { class: "lbl", text: "Discord" }), chips("discord"), el("div", { class: "lbl", text: "Accounts" }), chips("riot"),
+        ...(roster.accounts[p.name] || []).map(id => el("button", { class: "link", style: "margin-right:12px;font-size:13px",
+          text: `op.gg: ${id} ↗`, onclick: () => api.open_link(opggUrl(id)) }))),
       el("button", { class: "plain", title: "Remove from " + rosterNow, "aria-label": "Remove " + p.name, text: "×",
         onclick: () => { if (confirm(`Remove ${p.name || "this player"} from ${rosterNow}?`)) { roster.players.splice(roster.players.indexOf(p), 1); unsaved(); renderRoster(); } } })));
   }

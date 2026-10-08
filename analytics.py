@@ -1252,6 +1252,51 @@ def font_css():
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------------------
+# op.gg links
+# ---------------------------------------------------------------------------
+
+OPGG_REGIONS = ["na", "euw", "eune", "kr", "br", "lan", "las", "oce", "jp", "tr", "ru", "me", "sg", "tw", "vn"]
+
+
+def load_app_settings(paths):
+    try:
+        return json.loads((paths.data / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_app_settings(paths, **changes):
+    settings = load_app_settings(paths)
+    settings.update(changes)
+    (paths.data / "settings.json").write_text(json.dumps(settings, indent=1), encoding="utf-8")
+
+
+def opgg_region(paths):
+    region = load_app_settings(paths).get("opgg_region", "na")
+    return region if region in OPGG_REGIONS else "na"
+
+
+def full_riot_ids(roster, games):
+    """Each player's accounts with their #tag, which op.gg needs. A roster
+    entry typed without one ("Spark Salesman") gets it from the recorded
+    games (the most common tag seen with that name)."""
+    seen = defaultdict(Counter)
+    for g in games:
+        for p in g["players"]:
+            rid = p.get("riotId") or ""
+            if "#" in rid and rid != "#":
+                seen[rid.split("#")[0].strip().lower()][rid] += 1
+    accounts = {}
+    for p in roster.players:
+        for rid in p["riot"]:
+            full = rid if "#" in rid else (seen[rid.strip().lower()].most_common(1)[0][0]
+                                           if seen.get(rid.strip().lower()) else None)
+            if full and full not in accounts.setdefault(p["name"], []):
+                accounts[p["name"]].append(full)
+    return accounts
+
+
 def load_game_delays(paths):
     """Per-game spectator delays set in the app: {first file name: seconds}."""
     path = paths.data / "game_delays.json"
@@ -1437,6 +1482,8 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         "version": VERSION,
         "players": players,
         "rosters": roster_list,
+        "accounts": full_riot_ids(roster, games),
+        "region": opgg_region(paths),
         "info_kinds": INFO_KINDS,
         "vision_kinds": VISION_KINDS,
         "rows": all_rows,

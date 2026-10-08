@@ -267,7 +267,17 @@ class Api:
         import analytics
         data = (analytics.load_rosters(self._paths.roster) if self._paths.roster.exists()
                 else {"rosters": [], "players": []})
-        return {**data, "candidates": analytics.roster_candidates(self._paths)}
+        files = sorted(self._paths.games.glob("game_*.jsonl")) if self._paths.games.is_dir() else []
+        roster = analytics.Roster(data["players"], data["rosters"])
+        return {**data, "candidates": analytics.roster_candidates(self._paths),
+                "accounts": analytics.full_riot_ids(roster, analytics.load_games(files)),
+                "region": analytics.opgg_region(self._paths), "regions": analytics.OPGG_REGIONS}
+
+    def set_region(self, region):
+        import analytics
+        if region in analytics.OPGG_REGIONS:
+            analytics.save_app_settings(self._paths, opgg_region=region)
+        return True
 
     def save_roster(self, rosters, players):
         import analytics
@@ -407,7 +417,8 @@ class Api:
         return {"ok": True, "added": added, "message": f"Checked: {added} new game recording(s)."}
 
     def open_link(self, url):
-        if str(url).startswith("https://discord.com/"):
+        """Open a page in the normal web browser (only Discord and op.gg)."""
+        if str(url).startswith(("https://discord.com/", "https://op.gg/")):
             import webbrowser
             webbrowser.open(url)
 
