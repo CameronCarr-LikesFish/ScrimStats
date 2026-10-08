@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "ScrimStats"
-VERSION = "2.4.2"
+VERSION = "2.5.0"
 
 
 def app_dir():
@@ -107,7 +107,8 @@ def sha256(path):
 OLD_DEFAULTS = {
     "Callout types.txt": {"c0940b96d254db171983e07dc81c71fe0e6251e3fd55143295562926ef9a9f74",    # 2.0.x
                           "08aab5039cd313701ef87d1b64b2db987f9fefd795cc0bb1c1fe0d87d9d4700d",    # 2.1-2.2
-                          "799689ee2d4c45b668d6aac468b4d88d2cac70a54a5195543c58c4edeb743904"},   # 2.3
+                          "799689ee2d4c45b668d6aac468b4d88d2cac70a54a5195543c58c4edeb743904",    # 2.3
+                          "7321dcaa7d730eae4a3abd08f67eb1d59ae7d558719b5b62389ab42cb64f0c18"},   # 2.4
     "League words.txt": {"a28537c694a2c5549e8a3ade89842fa7122f54740502a581adf68b378235d5e3",     # 2.0.x
                          "f994f3d59f51856fa8429da286cd9837b02470fed2b2c91cc96dc2f5f6055823"},    # 2.1-2.2
     "Champion nicknames.txt": {"e1da9b999b327571a0005319f16cdc353f3f1c920b45668c9b39d55fa9742f94"},

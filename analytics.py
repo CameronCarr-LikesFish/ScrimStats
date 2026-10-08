@@ -59,7 +59,9 @@ PHASES = ("early", "mid", "late")
 INFO_KINDS = ["Enemy info", "My status", "Item timers", "Timers"]
 VISION_KINDS = ["Warding", "Vision requests", "Sweeping"]
 AT_TEAMMATES = "Flame at teammates"
-AT_SELF = "Frustration"     # not aimed at anyone; not scored
+AT_SELF = "Frustration"     # exclamations ("oh fuck"): not shown, not scored
+NEGATIVE = "Negative"       # defeatist / complaining: "we're so fucked", "ff"
+CONTEXT_BEFORE_S, CONTEXT_AFTER_S = 45, 20   # "more context" around a quoted line
 FLAME_REACH = 5             # "you" / a teammate's name within this many words of a flame phrase
 DEFAULT_ROSTER = "Team"
 ROLES = ("Top", "Jungle", "Mid", "Bot", "Support")
@@ -437,7 +439,7 @@ def clock_went_back(observations):
 def read_game_file(path):
     records = read_jsonl(path)
     walls, observations, players, raw_events, scores = [], [], [], [], []
-    spectator, as_player = False, False
+    spectator, as_player, active_team = False, False, None
     for r in records:
         stamp = r.get("wall_clock") or r.get("started_at")
         if stamp:
@@ -449,6 +451,7 @@ def read_game_file(path):
             spectator = spectator or bool(r.get("spectator"))
             # Only newer recordings say so outright; older ones are "unknown".
             as_player = r.get("spectator") is False
+            active_team = r.get("active_team")
         elif r.get("type") == "scores" and r.get("game_time") is not None:
             scores.append((float(r["game_time"]), {str(p.get("id") or "").lower(): p.get("vision")
                                                    for p in r.get("players", []) if p.get("id")}))
@@ -458,6 +461,13 @@ def read_game_file(path):
         return None
     if clock_went_back(observations):
         spectator, as_player = True, False       # the clock went back: a spectator rewind
+    # Whose point of view this file's Win/Lose is from: a player's own side;
+    # for a spectator, the blue side (ORDER). (Checked against which nexus
+    # towers fell: a spectator's "Win" was blue's win both times.) None: a
+    # player's recording from before 2.4.3, side unknown.
+    view = "ORDER" if spectator else (active_team if as_player else None)
+    for r in raw_events:
+        r["_view"] = view
     return {"file": path.name, "start": min(walls), "end": max(walls), "players": players,
             "signature": player_signature(players), "observations": observations,
             "raw_events": raw_events, "scores": scores, "spectator": spectator,
@@ -501,7 +511,7 @@ def load_games(paths_list, delays=None):
             real = real_time(game_seconds)
             return (real if real is not None else start + game_seconds) - delay
 
-        events, seen, result = [], SeenEvents(), None
+        events, seen, end_result, result_side = [], SeenEvents(), None, None
         raw = [r for p in parts for r in p["raw_events"]]
         for r in sorted(raw, key=lambda r: parse_iso(r["wall_clock"])):
             if seen.is_repeat(r):
@@ -509,8 +519,8 @@ def load_games(paths_list, delays=None):
             wall = (to_wall(float(r["EventTime"])) if r.get("EventTime") is not None
                     else parse_iso(r["wall_clock"]) - delay)
             events.append({**r, "wall": wall})
-            if r.get("EventName") == "GameEnd":
-                result = r.get("Result")
+            if r.get("EventName") == "GameEnd" and end_result is None:
+                end_result, result_side = r.get("Result"), r.get("_view")
         # The game ran from game clock 0 to the furthest moment anyone saw.
         # (A spectator who keeps rewinding after the end doesn't make it longer.)
         last_moment = max((gt for gt, _ in observations), default=0.0)
@@ -518,10 +528,56 @@ def load_games(paths_list, delays=None):
                       "start": to_wall(0.0) if observations else g["start"],
                       "end": to_wall(last_moment) if observations else g["end"],
                       "players": g["players"], "events": events,
-                      "result": result, "spectator": spectator, "player_view": player_view,
+                      "winner": winner_team(events, end_result, result_side),
+                      "end_result": end_result, "result": end_result,
+                      "spectator": spectator, "player_view": player_view,
                       "to_wall": to_wall, "max_game_time": last_moment,
                       "scores": sorted(s for p in parts for s in p["scores"])})
     return games
+
+
+NEXUS_NEW = re.compile(r"Turret_T(Order|Chaos)_L1_P[45]", re.I)
+NEXUS_OLD = re.compile(r"Turret_T([12])_C_0[12]", re.I)
+
+
+def winner_team(events, end_result, result_side):
+    """Which side won ("ORDER" / "CHAOS"), or None if it can't be told.
+    1. The side that lost both nexus towers in the last 3 minutes lost.
+    2. Otherwise the game's own Win/Lose, read from the right side's view."""
+    times = [float(e["EventTime"]) for e in events if e.get("EventTime") is not None]
+    last = max(times, default=0.0)
+    down = defaultdict(set)
+    for e in events:
+        if e.get("EventName") != "TurretKilled" or e.get("EventTime") is None:
+            continue
+        name = str(e.get("TurretKilled"))
+        m, old = NEXUS_NEW.search(name), NEXUS_OLD.search(name)
+        if (m or old) and float(e["EventTime"]) >= last - 180:
+            side = m.group(1).upper() if m else ("ORDER" if old.group(1) == "1" else "CHAOS")
+            down[side].add(name)
+    losers = [side for side, towers in down.items() if len(towers) >= 2]
+    if len(losers) == 1:
+        return "CHAOS" if losers[0] == "ORDER" else "ORDER"
+    if end_result in ("Win", "Lose") and result_side in ("ORDER", "CHAOS"):
+        other = "CHAOS" if result_side == "ORDER" else "ORDER"
+        return result_side if end_result == "Win" else other
+    return None
+
+
+def our_side(game, roster):
+    """The side most of our roster's accounts were on."""
+    sides = Counter(p.get("team") for p in game["players"] if roster.game_player(p))
+    return sides.most_common(1)[0][0] if sides else None
+
+
+def our_result(game, roster):
+    """"Win" / "Lose" for our team, or None if unknown."""
+    side = our_side(game, roster)
+    if game.get("winner") and side:
+        return "Win" if game["winner"] == side else "Lose"
+    if not game.get("spectator"):
+        return game.get("end_result")       # an older player recording: assume it's one of us
+    return None
 
 
 def name_lookup(game_players):
@@ -694,10 +750,10 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
     utterances = [r for r in records if r.get("type") == "utterance"]
     if not meta:
         warnings.append(f"{path.name}: no meta line; skipped.")
-        return [], set(), [], []
+        return [], set(), [], [], []
     start = meta.get("audio_start_t") or (utterances[0]["t"] if utterances else None)
     if start is None:
-        return [], set(), [], []
+        return [], set(), [], [], []
     track_lengths = [t.get("duration_s") or 0 for t in meta.get("tracks", [])]
     end = max([start + max(track_lengths, default=0)] + [u["t_end"] for u in utterances])
     session_id = meta.get("craig_recording_id", path.stem)
@@ -712,15 +768,17 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
         u["n_words"] = word_count(u["text"])
         # Flame / Not flame decisions made in the dashboard replace the automatic call.
         u["qid"] = f"{session_id}|{u['t']:.2f}|{u['speaker']}"
-        u["auto_flame"] = bool(u["counts"].get(AT_TEAMMATES))
+        u["auto_kind"] = ("Flame" if u["counts"].get(AT_TEAMMATES)
+                          else NEGATIVE if u["counts"].get(NEGATIVE) else None)
         verdict = (reviews or {}).get(u["qid"])
-        if verdict == "not" and u["counts"].get(AT_TEAMMATES):
-            del u["counts"][AT_TEAMMATES]
-            u["counts"][AT_SELF] = 1           # still shown under "other negative"
-        elif verdict == "flame":
-            u["counts"][AT_TEAMMATES] = 1
-            u["counts"].pop(AT_SELF, None)
-            u["counts"].pop("Shotcalling", None)
+        if verdict in ("not", "negative", "flame"):
+            u["counts"].pop(AT_TEAMMATES, None)
+            u["counts"].pop(NEGATIVE, None)
+            if verdict == "flame":
+                u["counts"][AT_TEAMMATES] = 1
+                u["counts"].pop("Shotcalling", None)
+            elif verdict == "negative":
+                u["counts"][NEGATIVE] = 1
         u["review"] = verdict
     # Who started talking while someone else was mid-sentence.
     ordered = sorted(utterances, key=lambda u: u["t"])
@@ -769,8 +827,20 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
                     objectives.append(e["wall"])
             early_end, late = phase_times(game)
         team = roster.team_of(present)
-        played.append({**base, "game": number, "minutes": round((w1 - w0) / 60, 3),
-                       "result": game["result"] if game else None, "roster": team})
+        result = our_result(game, roster) if game else None
+        ours, theirs = [], []
+        if game:
+            side = our_side(game, roster)
+            for entry in game["players"]:
+                if not entry.get("championName"):
+                    continue
+                if side and entry.get("team") == side:
+                    ours.append([entry["championName"], roster.game_player(entry) or ""])
+                elif side:
+                    theirs.append(entry["championName"])
+        played.append({**base, "game": number, "game_file": game["file"] if game else None,
+                       "minutes": round((w1 - w0) / 60, 3), "result": result, "roster": team,
+                       "ours": ours, "theirs": theirs})
         played[-1]["_window"] = (w0, w1, game, early_end if game else None,
                                  late if game else None, entries)
 
@@ -800,7 +870,7 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
                     **base,
                     "game": number,
                     "game_file": game["file"] if game else None,
-                    "result": game["result"] if game else None,
+                    "result": result,
                     "roster": team,
                     "phase": phase,
                     "player": player,
@@ -836,10 +906,12 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
     # Word-for-word quotes of every flame line (and other negative lines),
     # so they can be looked at directly, with when they were said.
     quotes = []
+    by_time = sorted(utterances, key=lambda u: u["t"])
+    starts = [u["t"] for u in by_time]
     for u in utterances:
         kind = ("Flame" if u["counts"].get(AT_TEAMMATES)
-                else "Frustration" if u["counts"].get(AT_SELF) else None)
-        if not kind:
+                else NEGATIVE if u["counts"].get(NEGATIVE) else None)
+        if not kind and not u["review"] and not u["auto_kind"]:
             continue
         where = next((g for g in played if g["_window"][0] <= u["t"] < g["_window"][1]), None)
         clock = phase = None
@@ -848,8 +920,14 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
             clock = to_game_time(game, u["t"])
             lane = lane_of(roster.role(u["player"]), entries.get(u["player"]))
             phase = "early" if clock < early_end(lane) else "mid" if clock < late else "late"
-        quotes.append({**base, "id": u["qid"], "review": u["review"], "auto_flame": u["auto_flame"],
-                       "kind": kind, "player": u["player"] or u["speaker"],
+        # What was said around it, by everyone, for the "more context" button.
+        lo = bisect.bisect_left(starts, u["t"] - CONTEXT_BEFORE_S)
+        hi = bisect.bisect_right(starts, u["t"] + CONTEXT_AFTER_S)
+        context = [[datetime.fromtimestamp(c["t"]).strftime("%H:%M:%S"), c["player"] or c["speaker"],
+                    c["text"], c is u] for c in by_time[lo:hi]]
+        quotes.append({**base, "id": u["qid"], "review": u["review"], "auto_kind": u["auto_kind"],
+                       "kind": kind or "Cleared", "context": context,
+                       "player": u["player"] or u["speaker"],
                        "on_roster": u["player"] is not None,
                        "game": where["game"] if where else None,
                        "roster": where["roster"] if where else roster.team_of({u["player"]}),
@@ -857,9 +935,28 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None):
                        "time": datetime.fromtimestamp(u["t"]).strftime("%H:%M:%S"),
                        "text": u.get("text", ""),
                        "text_en": u.get("text_en", "") if u.get("language") == "zh" else ""})
+    # Between games: everything said outside the recorded games, kept apart
+    # from the in-game stats (only when this session has recorded games).
+    between = []
+    windows = [g["_window"] for g in played if g["_window"][2]]
+    if windows:
+        gap_minutes = max(0.0, (end - start) - sum(w[1] - w[0] for w in windows)) / 60
+        outside = [u for u in utterances if not any(w[0] <= u["t"] < w[1] for w in windows)]
+        team = roster.team_of(track_players)
+        for name in sorted({u["player"] or u["speaker"] for u in outside}):
+            mine = [u for u in outside if (u["player"] or u["speaker"]) == name]
+            cats = Counter()
+            for u in mine:
+                cats.update(u["counts"])
+            between.append({**base, "roster": team, "player": name,
+                            "on_roster": mine[0]["player"] is not None,
+                            "minutes": round(gap_minutes, 2),
+                            "talk_s": round(sum(u["t_end"] - u["t"] for u in mine), 1),
+                            "words": sum(u["n_words"] for u in mine),
+                            "cats": {k: v for k, v in cats.items() if v}})
     for g in played:
         del g["_window"]
-    return rows, unmapped, played, quotes
+    return rows, unmapped, played, quotes, between
 
 
 # ---------------------------------------------------------------------------
@@ -899,6 +996,7 @@ def derived_stats(t):
                                             if t["plays"] >= 5 else "")
     stats["positivity_%"] = pct(c["Positive"], c["Positive"] + c[AT_TEAMMATES], 3)
     stats["flame_at_teammates_per_10min"] = per10(c[AT_TEAMMATES])
+    stats["negative_talk_per_10min"] = per10(c[NEGATIVE])
     stats["blame_after_death_%"] = pct(t["deaths_blamed"], t["deaths"], 2)
     stats["fight_presence_%"] = pct(t["fights_spoke"], t["fights"])
     stats["words_per_teamfight"] = round(t["fight_words"] / t["fights"], 1) if t["fights"] else ""
@@ -941,7 +1039,7 @@ def write_csv(path, rows):
 # ---------------------------------------------------------------------------
 
 def load_flame_reviews(paths):
-    """Lines marked Flame / Not flame in the dashboard: {line id: "flame" | "not"}."""
+    """Lines marked in the dashboard: {line id: "flame" | "negative" | "not" (neither)}."""
     try:
         return json.loads((paths.data / "flame_reviews.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -950,12 +1048,62 @@ def load_flame_reviews(paths):
 
 def save_flame_review(paths, line_id, verdict):
     reviews = load_flame_reviews(paths)
-    if verdict in ("flame", "not"):
+    if verdict in ("flame", "negative", "not"):
         reviews[str(line_id)] = verdict
     else:
         reviews.pop(str(line_id), None)        # undone: back to the automatic call
     (paths.data / "flame_reviews.json").write_text(json.dumps(reviews, indent=1, ensure_ascii=False),
                                                    encoding="utf-8")
+
+
+def champion_icons(paths, names, log=print):
+    """Small square icons for these champions, from Riot's Data Dragon,
+    saved in _data/champions so each is downloaded once. Returns
+    {name: "data:image/png;base64,..."}; champions it can't get are left out
+    (the dashboard shows their initials instead)."""
+    import base64
+    shipped = bundled("champions")              # every champion, packed in with the app
+    try:
+        shipped_ids = json.loads((shipped / "ids.json").read_text(encoding="utf-8"))["ids"]
+    except (OSError, ValueError, KeyError):
+        shipped_ids = {}
+    icons = {}
+    for n in list(names):
+        if n in shipped_ids and (shipped / f"{shipped_ids[n]}.png").exists():
+            icons[n] = "data:image/png;base64," + base64.b64encode(
+                (shipped / f"{shipped_ids[n]}.png").read_bytes()).decode("ascii")
+    # Champions newer than the app: downloaded once into _data/champions.
+    folder = paths.data / "champions"
+    ids_path = folder / "ids.json"
+    try:
+        ids = json.loads(ids_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        ids = {}
+    names = {n for n in names if n and n not in icons}
+    missing = [n for n in names if n not in ids or not (folder / f"{ids[n]}.png").exists()]
+    if missing:
+        try:
+            import requests
+            version = requests.get("https://ddragon.leagueoflegends.com/api/versions.json", timeout=5).json()[0]
+            if any(n not in ids for n in missing):
+                data = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json",
+                                    timeout=10).json()["data"]
+                ids.update({c["name"]: c["id"] for c in data.values()})
+                folder.mkdir(parents=True, exist_ok=True)
+                ids_path.write_text(json.dumps(ids, ensure_ascii=False, indent=0), encoding="utf-8")
+            for n in missing:
+                if n in ids and not (folder / f"{ids[n]}.png").exists():
+                    image = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/"
+                                         f"{ids[n]}.png", timeout=10)
+                    if image.ok and image.content[:4] == b"\x89PNG":
+                        (folder / f"{ids[n]}.png").write_bytes(image.content)
+        except Exception as error:
+            log(f"  (Champion icons not downloaded: {type(error).__name__}. They'll be tried again next time.)")
+    for n in names:
+        path = folder / f"{ids.get(n, '')}.png"
+        if n in ids and path.exists():
+            icons[n] = "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
+    return icons
 
 
 def font_css():
@@ -1003,7 +1151,7 @@ def game_list(paths):
         out.append({
             "id": g["file"], "start": g["start"], "end": g["end"], "pieces": len(g["files"]),
             "spectator": g["spectator"], "player_view": g["player_view"],
-            "delay": g["delay"], "result": g["result"],
+            "delay": g["delay"], "result": our_result(g, roster),
             "kills": sum(1 for e in g["events"] if e.get("EventName") == "ChampionKill"),
             "objectives": sum(1 for e in g["events"] if str(e.get("EventName", "")).endswith("Kill")
                               and any(o in str(e.get("EventName")) for o in OBJECTIVE_EVENTS)),
@@ -1100,14 +1248,15 @@ def build(paths, log=print, open_browser=True, open_roster=True):
     except Exception as error:         # the stats still work without corrections
         log(f"  (Corrections not applied to the stats: {error})")
 
-    warnings, all_rows, unmapped, played, quotes = [], [], set(), [], []
+    warnings, all_rows, unmapped, played, quotes, between = [], [], set(), [], [], []
     if roster.empty:
         warnings.append("No roster yet, so people are shown by Discord name and fight/death/objective "
                         "stats are missing. Open the Rosters tab to say who's who.")
     for path in transcripts:
-        rows, missing, games_here, said = analyze_session(path, games, roster, classifier, warnings,
-                                                          load_flame_reviews(paths))
+        rows, missing, games_here, said, outside = analyze_session(
+            path, games, roster, classifier, warnings, load_flame_reviews(paths))
         quotes.extend(said)
+        between.extend(outside)
         all_rows.extend(rows)
         played.extend(games_here)
         unmapped |= missing
@@ -1157,6 +1306,9 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         "rows": all_rows,
         "games": played,
         "quotes": quotes,
+        "between": between,
+        "icons": champion_icons(paths, {c for g in played for c in
+                                        [x[0] for x in g["ours"]] + g["theirs"]}, log),
         "warnings": warnings,
     }
     template = bundled("dashboard_template.html").read_text(encoding="utf-8")

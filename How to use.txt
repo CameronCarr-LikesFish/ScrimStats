@@ -17,6 +17,9 @@ HOME
 DASHBOARD
    Each player's comms stats, and how they change over time. Pick a roster
    (Varsity, JV...) and a part of the game (early / mid / late) at the top.
+   Further down: champion win rates, every flame and negative line word for
+   word (click "More context" to see what led up to it, and mark each one
+   Flame, Negative or Neither), and what was said between games.
    Every stat is explained at the bottom.
 
 TRANSCRIPTS

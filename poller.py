@@ -292,8 +292,14 @@ class Poller:
         # A spectator has no "active player" of their own.
         active = self.fetch("activeplayername")
         spectator = not (isinstance(active, str) and active.strip())
+        # The player's side: the game's Win/Lose is from their point of view.
+        active_team = None
+        if not spectator:
+            for p in players:
+                if isinstance(p, dict) and active in (p.get("riotId"), p.get("summonerName")):
+                    active_team = p.get("team")
         rec.write({"type": "players", "wall_clock": wall_clock, "game_time": game_time,
-                   "spectator": spectator, "players": summary})
+                   "spectator": spectator, "active_team": active_team, "players": summary})
         rec.players_written = True
         rec.signature = signature(players)
         rec.last_players_check = now

@@ -101,6 +101,18 @@
   .rev button[aria-pressed="true"].yes { background: var(--bad); border-color: var(--bad); color: #fff; }
   .rev button[aria-pressed="true"].no { background: var(--good); border-color: var(--good); color: #fff; }
   .checked { font-size: 12px; color: var(--ink-2); }
+  .rev button[aria-pressed="true"].neg { background: var(--s4); border-color: var(--s4); color: #000; }
+  .ctx td { background: var(--page); }
+  .ctx .line { padding: 2px 0; font-size: 13.5px; color: var(--ink-2); }
+  .ctx .line.me { color: var(--ink); font-weight: 700; }
+  .ctx .line b { color: var(--ink); margin-right: 6px; }
+  .champ { display: flex; align-items: center; gap: 10px; }
+  .champ img, .champ .ini { width: 32px; height: 32px; border-radius: 6px; flex: none; }
+  .champ .ini { display: inline-flex; align-items: center; justify-content: center; background: var(--grid);
+    font-size: 12px; font-weight: 700; color: var(--ink-2); }
+  .wr { display: inline-block; width: 70px; height: 6px; border-radius: 3px; background: var(--grid);
+    vertical-align: middle; margin-right: 8px; overflow: hidden; }
+  .wr span { display: block; height: 100%; }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--grid);
     white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -181,23 +193,61 @@
   </section>
 
   <section class="card">
-    <h2>Flame and negative comments</h2>
-    <p class="note">Every line counted as flame, word for word, so it can be looked at directly. "Other negative" adds
-      swearing and frustration that wasn't aimed at anyone (it doesn't count against them). Follows the roster, time range
-      and wins/losses filters above. Transcription mistakes happen: check the transcript before raising something.
-      In the app, mark each line <b>Flame</b> or <b>Not flame</b>: your call replaces the automatic one in every stat
-      (click Refresh at the top to update the numbers), and teaches you which phrases to add or remove in Settings.</p>
+    <h2>Champions</h2>
+    <p class="note">Every champion in your games, for the roster and time range above. Win rate is your team's, whether
+      you played the champion or played against it.</p>
+    <div class="filters" style="margin-bottom:10px">
+      <label>Show
+        <select id="c-side">
+          <option value="ours">Our picks</option>
+          <option value="theirs">Played against</option>
+        </select>
+      </label>
+      <label>Sort by
+        <select id="c-sort">
+          <option value="games">Most played</option>
+          <option value="best">Best win rate</option>
+          <option value="worst">Worst win rate</option>
+        </select>
+      </label>
+    </div>
+    <div class="table-wrap" id="champions"></div>
+  </section>
+
+  <section class="card">
+    <h2>Flame and negative talk</h2>
+    <p class="note"><b>Flame</b> is blaming or insulting a teammate. <b>Negative</b> is defeatist or complaining talk
+      ("we're so fucked", "we're going to lose", "ff"). Swearing on its own ("oh fuck") is neither. Every line is quoted
+      word for word; <b>More context</b> shows what everyone said around it. Transcription mistakes happen, so check
+      before raising something. In the app, mark each line <b>Flame</b>, <b>Negative</b> or <b>Neither</b>: your call
+      replaces the automatic one in every stat (Refresh to update the numbers). Click it again to undo.</p>
     <div class="filters" style="margin-bottom:10px">
       <label>Show
         <select id="q-kind">
-          <option value="Flame">Flame only</option>
-          <option value="all">Flame + other negative</option>
+          <option value="Flame">Flame</option>
+          <option value="both">Flame + negative</option>
+          <option value="Negative">Negative</option>
+          <option value="Cleared">Lines you marked "neither"</option>
+        </select>
+      </label>
+      <label>When
+        <select id="q-when">
+          <option value="all">In games and between</option>
+          <option value="in">During games</option>
+          <option value="between">Between games</option>
         </select>
       </label>
       <label>Player <select id="q-player"><option value="">Everyone</option></select></label>
     </div>
     <p class="note" id="q-note" role="status"></p>
     <div class="table-wrap" id="quotes"></div>
+  </section>
+
+  <section class="card">
+    <h2>Between games</h2>
+    <p class="note">What was said outside the recorded games (lobby, draft, reviews between games). It's kept out of every
+      in-game stat above, and shown here on its own, for the roster and time range above.</p>
+    <div class="table-wrap" id="between"></div>
   </section>
 
   <section class="card">
@@ -347,6 +397,9 @@ const METRICS = [
   { group: "Attitude", key: "flame", label: "Flame at teammates per 10 min", unit: "", better: "down", team: true,
     desc: "Blaming or insulting a teammate: \"what are you doing\", \"why did you go in\", \"you're so useless\". Only counts when \"you\" or a teammate's name is right next to it. Swearing on its own, or \"I'm so bad\", isn't flame.",
     f: t => per10(cat(t, "Flame at teammates"), t) },
+  { group: "Attitude", key: "negative", label: "Negative talk per 10 min", unit: "", better: "down", team: true,
+    desc: "Defeatist or complaining talk: \"we're so fucked\", \"we're going to lose\", \"it's so over\", \"ff\", \"this game sucks\". Swearing on its own (\"oh fuck\") doesn't count.",
+    f: t => per10(cat(t, "Negative"), t) },
   { group: "Attitude", key: "accountability", label: "Accountability per 10 plays", unit: "", better: "up", team: true,
     desc: "Owning mistakes (\"my bad\", \"that's on me\", \"I misplayed\") per 10 plays. A play is any fight with a kill in it, or an objective taken. Needs at least 5 plays.",
     f: t => t.plays >= 5 ? 10 * cat(t, "Accountability") / t.plays : null },
@@ -765,61 +818,150 @@ function renderSessions() {
   $("sessions").replaceChildren(el("table", {}, el("thead", {}, head), body));
 }
 
-// ---------- flame and negative comments ----------
+// ---------- flame and negative talk ----------
 const clockText = s => s == null ? "between games" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
-// The app (not a browser) can save Flame / Not flame decisions.
+// The app (not a browser) can save Flame / Negative / Neither decisions.
 const APP = (() => { try { return window.parent !== window && window.parent.pywebview ? window.parent.pywebview.api : null; } catch (e) { return null; } })();
+const VERDICT_KIND = { flame: "Flame", negative: "Negative", not: "Cleared" };
+const open = new Set();      // lines showing "more context"
 async function review(q, verdict) {
   verdict = q.review === verdict ? null : verdict;          // clicking it again undoes it
   try { await APP.review_flame(q.id, verdict); } catch (e) { alert("Couldn't save that: " + e); return; }
   q.review = verdict; q.touched = true;
-  q.kind = verdict === "flame" ? "Flame" : verdict === "not" ? "Frustration" : (q.auto_flame ? "Flame" : "Frustration");
+  q.kind = verdict ? VERDICT_KIND[verdict] : (q.auto_kind || "Cleared");
   renderQuotes();
   $("q-note").textContent = "Saved. Click Refresh at the top of the app to update the numbers.";
 }
+const gameResult = q => ((DATA.games || []).find(g => g.session === q.session && g.game === q.game) || {}).result;
+function quoteShown(q, kind) {
+  if (q.touched) return true;                                // stays put right after you mark it
+  return kind === "both" ? q.kind === "Flame" || q.kind === "Negative" : q.kind === kind;
+}
 function renderQuotes() {
-  const kind = $("q-kind").value, who = $("q-player").value;
-  const list = (DATA.quotes || []).filter(q => (kind === "all" || q.kind === "Flame" || q.touched) && (!who || q.player === who)
+  const kind = $("q-kind").value, when = $("q-when").value, who = $("q-player").value;
+  const list = (DATA.quotes || []).filter(q => quoteShown(q, kind) && (!who || q.player === who)
+    && (when === "all" || (when === "in") === !!q.game)
     && inRange(q) && (ROSTERS.length < 2 || q.roster === state.roster || !q.roster)
     && (state.result === "all" || (q.game && gameResult(q) === state.result)));
   const wrap = $("quotes");
   if (!list.length) {
-    wrap.replaceChildren(el("p", { class: "empty", text: kind === "Flame" ? "No flame in this range. 👍" : "Nothing negative in this range." }));
+    wrap.replaceChildren(el("p", { class: "empty", text: kind === "Cleared" ? "No lines marked \"neither\"." : "Nothing here in this range. 👍" }));
     return;
   }
-  const head = el("tr", {}, ...["When", "Game", "Who", "Type", "What they said", APP ? "Is this flame?" : ""].map(t => el("th", { text: t, style: "text-align:left" })));
+  const cols = ["When", "Game", "Who", "Type", "What they said", ""].concat(APP ? ["Your call"] : []);
+  const head = el("tr", {}, ...cols.map(t => el("th", { text: t, style: "text-align:left" })));
   const body = el("tbody");
   for (const q of [...list].reverse()) {
-    const said = el("td", { style: "white-space:normal;text-align:left;min-width:280px" }, `“${q.text}”`);
+    const said = el("td", { style: "white-space:normal;text-align:left;min-width:260px" }, `“${q.text}”`);
     if (q.text_en) said.append(el("div", { class: "note", style: "margin:2px 0 0", text: "→ " + q.text_en }));
-    body.append(el("tr", {},
-      el("td", { text: `${dayName(parseDate(q.date))} ${q.time}` }),
+    const more = el("button", { class: "link", style: "margin:0;white-space:nowrap", "aria-expanded": String(open.has(q.id)),
+      text: open.has(q.id) ? "Less context" : "More context" });
+    more.addEventListener("click", () => { open.has(q.id) ? open.delete(q.id) : open.add(q.id); renderQuotes(); });
+    const color = q.kind === "Flame" ? "var(--bad)" : q.kind === "Negative" ? "var(--s4)" : "var(--muted)";
+    const tr = el("tr", {},
+      el("td", { style: "text-align:left", text: `${dayName(parseDate(q.date))} ${q.time}` }),
       el("td", { style: "text-align:left", text: q.game ? `Game ${q.game}, ${clockText(q.clock)}${q.phase ? " (" + q.phase + ")" : ""}` : "between games" }),
       el("td", { style: "text-align:left", text: q.player + (q.on_roster ? "" : " (not on roster)") }),
-      el("td", { style: "text-align:left;color:" + (q.kind === "Flame" ? "var(--bad)" : "var(--ink-2)") },
-        q.kind === "Flame" ? "Flame" : "Other negative",
+      el("td", { style: "text-align:left;color:" + color },
+        q.kind === "Cleared" ? "Neither" : q.kind,
         q.review ? el("div", { class: "checked", text: "✓ checked by you" }) : null),
-      said,
-      reviewCell(q)));
+      said, el("td", { style: "text-align:left" }, more));
+    if (APP) tr.append(reviewCell(q));
+    body.append(tr);
+    if (open.has(q.id)) {
+      const box = el("td", { colspan: String(cols.length), style: "text-align:left;white-space:normal" });
+      for (const [time, name, text, me] of q.context || [])
+        box.append(el("div", { class: "line" + (me ? " me" : "") }, el("b", { text: `${time} ${name}:` }), text));
+      body.append(el("tr", { class: "ctx" }, box));
+    }
   }
   wrap.replaceChildren(el("table", {}, el("thead", {}, head), body));
 }
 function reviewCell(q) {
-  const td = el("td", { style: "text-align:left" });
-  if (!APP) return td;
   const b = (cls, verdict, text) => {
     const button = el("button", { class: cls, "aria-pressed": String(q.review === verdict), text,
       title: q.review === verdict ? "Click again to undo" : "" });
     button.addEventListener("click", () => review(q, verdict));
     return button;
   };
-  td.append(el("span", { class: "rev" }, b("yes", "flame", "Flame"), b("no", "not", "Not flame")));
-  return td;
+  return el("td", { style: "text-align:left" },
+    el("span", { class: "rev" }, b("yes", "flame", "Flame"), b("neg", "negative", "Negative"), b("no", "not", "Neither")));
 }
-const gameResult = q => ((DATA.games || []).find(g => g.session === q.session && g.game === q.game) || {}).result;
 [...new Set((DATA.quotes || []).map(q => q.player))].sort().forEach(n => $("q-player").append(el("option", { value: n, text: n })));
-$("q-kind").addEventListener("change", renderQuotes);
-$("q-player").addEventListener("change", renderQuotes);
+["q-kind", "q-when", "q-player"].forEach(id => $(id).addEventListener("change", renderQuotes));
+
+// ---------- champions ----------
+function champIcon(name) {
+  const src = (DATA.icons || {})[name];
+  if (src) return el("img", { src, alt: "" });
+  return el("span", { class: "ini", text: name.replace(/[^A-Za-z]/g, "").slice(0, 2) });
+}
+function renderChampions() {
+  const side = $("c-side").value, sort = $("c-sort").value;
+  const stats = new Map();
+  for (const g of gamesPlayed()) {
+    if (!g.game || !g.result) continue;
+    const picks = side === "ours" ? g.ours : g.theirs.map(c => [c, ""]);
+    for (const [champ, player] of picks) {
+      if (!stats.has(champ)) stats.set(champ, { champ, games: 0, wins: 0, players: new Map() });
+      const c = stats.get(champ);
+      c.games++; c.wins += g.result === "Win";
+      if (player) c.players.set(player, (c.players.get(player) || 0) + 1);
+    }
+  }
+  const list = [...stats.values()];
+  const rate = c => c.wins / c.games;
+  list.sort((a, b) => sort === "games" ? b.games - a.games || rate(b) - rate(a) || a.champ.localeCompare(b.champ)
+    : sort === "best" ? rate(b) - rate(a) || b.games - a.games : rate(a) - rate(b) || b.games - a.games);
+  const wrap = $("champions");
+  if (!list.length) { wrap.replaceChildren(el("p", { class: "empty", text: "No finished games with a known result in this range yet." })); return; }
+  const head = el("tr", {}, ...["Champion", "Games", "W–L", "Win rate"].concat(side === "ours" ? ["Played by"] : [])
+    .map((t, i) => el("th", { text: t, style: i ? "" : "text-align:left" })));
+  const body = el("tbody");
+  for (const c of list) {
+    const pct = 100 * rate(c);
+    const bar = el("span", { class: "wr" }, el("span", { style: `width:${pct}%;background:${pct >= 50 ? "var(--good)" : "var(--bad)"}` }));
+    const tr = el("tr", {},
+      el("td", {}, el("span", { class: "champ" }, champIcon(c.champ), c.champ)),
+      el("td", { text: c.games }), el("td", { text: `${c.wins}–${c.games - c.wins}` }),
+      el("td", {}, bar, `${Math.round(pct)}%`));
+    if (side === "ours") tr.append(el("td", { style: "text-align:left;white-space:normal",
+      text: [...c.players.entries()].sort((a, b) => b[1] - a[1]).map(([p, n]) => n > 1 ? `${p} (${n})` : p).join(", ") }));
+    body.append(tr);
+  }
+  wrap.replaceChildren(el("table", {}, el("thead", {}, head), body));
+}
+["c-side", "c-sort"].forEach(id => $(id).addEventListener("change", renderChampions));
+
+// ---------- between games ----------
+function renderBetween() {
+  const rows = (DATA.between || []).filter(b => inRange(b) && (ROSTERS.length < 2 || b.roster === state.roster || !b.roster));
+  const wrap = $("between");
+  if (!rows.length) { wrap.replaceChildren(el("p", { class: "empty", text: "Nothing said between games in this range." })); return; }
+  const people = new Map();
+  for (const b of rows) {
+    if (!people.has(b.player)) people.set(b.player, { talk: 0, words: 0, cats: {}, on: b.on_roster });
+    const p = people.get(b.player);
+    p.talk += b.talk_s; p.words += b.words;
+    for (const [k, v] of Object.entries(b.cats)) p.cats[k] = (p.cats[k] || 0) + v;
+  }
+  const minutes = [...new Map(rows.map(b => [b.session, b.minutes])).values()].reduce((a, b) => a + b, 0);
+  const head = el("tr", {}, ...["Who", "Talking", "Words", "Positive", "Flame", "Negative", "Accountability", "Shotcalls"]
+    .map((t, i) => el("th", { text: t, style: i ? "" : "text-align:left" })));
+  const body = el("tbody");
+  for (const [name, p] of [...people.entries()].sort((a, b) => b[1].talk - a[1].talk)) {
+    const n = k => p.cats[k] || 0;
+    body.append(el("tr", {},
+      el("td", { style: "text-align:left", text: name + (p.on ? "" : " (not on roster)") }),
+      el("td", { text: `${(p.talk / 60).toFixed(1)} min` }), el("td", { text: p.words }),
+      el("td", { text: n("Positive") }),
+      el("td", { text: n("Flame at teammates"), style: n("Flame at teammates") ? "color:var(--bad);font-weight:700" : "" }),
+      el("td", { text: n("Negative"), style: n("Negative") ? "color:var(--s4);font-weight:700" : "" }),
+      el("td", { text: n("Accountability") }), el("td", { text: n("Shotcalling") })));
+  }
+  wrap.replaceChildren(el("p", { class: "note", text: `${Math.round(minutes)} minutes between games in this range. Counts are lines.` }),
+    el("table", {}, el("thead", {}, head), body));
+}
 
 // ---------- definitions ----------
 function renderDefs() {
@@ -830,7 +972,7 @@ function renderDefs() {
 }
 
 // ---------- wire up ----------
-function renderAll() { renderChart(); renderWinLoss(); renderQuotes(); renderSessions(); }
+function renderAll() { renderChart(); renderWinLoss(); renderChampions(); renderQuotes(); renderBetween(); renderSessions(); }
 const sel = $("f-metric");
 for (const g of [...new Set(METRICS.map(m => m.group))]) {
   const og = el("optgroup", { label: g });

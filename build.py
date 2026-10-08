@@ -73,6 +73,32 @@ def refresh_runtime(internal):
             print(f"  Updated {name} to {'.'.join(map(str, file_version(newest)))}")
 
 
+def download_champion_icons(folder):
+    """Every champion's square icon from Riot's Data Dragon, shipped inside
+    the app so the dashboard has them offline from the start. (Riot's art:
+    downloaded at build time, never committed to the repository.)"""
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+    import requests
+    version = requests.get("https://ddragon.leagueoflegends.com/api/versions.json", timeout=10).json()[0]
+    data = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{version}/data/en_US/champion.json",
+                        timeout=20).json()["data"]
+    folder.mkdir(parents=True, exist_ok=True)
+    ids = {c["name"]: c["id"] for c in data.values()}
+
+    def fetch(champ_id):
+        target = folder / f"{champ_id}.png"
+        if not target.exists():
+            image = requests.get(f"https://ddragon.leagueoflegends.com/cdn/{version}/img/champion/{champ_id}.png",
+                                 timeout=20)
+            if image.ok and image.content[:4] == b"\x89PNG":
+                target.write_bytes(image.content)
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(fetch, ids.values()))
+    (folder / "ids.json").write_text(json.dumps({"version": version, "ids": ids}, indent=0), encoding="utf-8")
+    print(f"  Champion icons: {sum(1 for _ in folder.glob('*.png'))} (patch {version})")
+
+
 def gpu_engine_args(sep):
     """Bundle the graphics-card engine (pywhispercpp: whisper.cpp built with
     Vulkan) when it's installed in this Python. It's built from source; see
@@ -95,6 +121,8 @@ def gpu_engine_args(sep):
 
 
 def main():
+    icons = BUILD / "champions"
+    download_champion_icons(icons)
     BUILD.mkdir(exist_ok=True)
     icon = BUILD / "icon.ico"
     make_icon(icon)
@@ -109,6 +137,7 @@ def main():
         "--add-data", f"{HERE / 'defaults'}{sep}defaults",
         "--add-data", f"{icon}{sep}.",
         "--add-data", f"{HERE / 'ui'}{sep}ui",
+        "--add-data", f"{icons}{sep}champions",
         # The app window: pywebview, using Windows' built-in WebView2 browser
         # engine through pythonnet.
         "--collect-all", "webview", "--collect-all", "pythonnet", "--collect-all", "clr_loader",
@@ -116,7 +145,7 @@ def main():
         "--collect-all", "ctranslate2",
         "--collect-all", "onnxruntime",
         "--collect-all", "tokenizers",
-        "--hidden-import", "poller", "--hidden-import", "transcriber", "--hidden-import", "analytics",
+        "--hidden-import", "poller", "--hidden-import", "transcriber", "--hidden-import", "analytics", "--hidden-import", "display",
     ]
     command += gpu_engine_args(sep)
     command.append(str(HERE / "app.py"))

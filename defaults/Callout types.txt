@@ -68,9 +68,15 @@ Positive: nice, good job, gj, well played, wp, good stuff, no worries, nt, nice 
 # "you're so useless", "Alex stop inting", "你在干嘛".
 Flame: what are you doing, what were you doing, what are you guys doing, why did you, why would you, why are you, why do you, why didn't you, why'd you, why you, are you serious, are you kidding, are you blind, you're so bad, youre so bad, you are so bad, so bad, you suck, useless, trash, garbage, dogshit, terrible, horrible, worst, inting, int, stop inting, stop dying, griefing, trolling, troll, stupid, idiot, braindead, brain dead, clown, noob, uninstall, learn to, can you not, what was that, what is this, report, 你在干嘛, 你干嘛, 你在干什么, 你搞什么, 会不会玩, 你好菜, 太菜, 菜狗, 废物, 垃圾, 演员, 别演, 送人头, 白给, 傻逼, 脑子, 坑货
 
-# FRUSTRATION: swearing and frustration that isn't aimed at anyone ("fuck
-# this", "I'm so bad", "卧槽"). It's fine and isn't scored; it's listed so
-# it's never mistaken for anything else.
+# NEGATIVE: defeatist or complaining talk that brings the team down: "we're
+# so fucked", "we're going to lose", "it's over", "ff". Shown in the
+# dashboard's flame and negative list and counted as negative talk.
+# Swearing on its own ("oh fuck") is NOT negative: that's the next line.
+Negative: we're so fucked, we are so fucked, we're fucked, we are fucked, so fucked, game's over, game is over, this game is over, it's so over, its so over, it's over for us, it's over guys, we're so done, we are so done, we're going to lose this, we're going to lose, we are going to lose, we're gonna lose, we lost this, we already lost, we can't win, we cant win, can't win this, cant win this, unwinnable, no way we win, there's no way we, ff, ff 15, ff15, let's ff, lets ff, just ff, surrender, go next, gg go next, we're throwing, we are throwing, we threw, threw the game, throwing the game, they're so fed, they are so fed, way too fed, too far ahead, hopeless, this is hopeless, i hate this game, i hate this, this game sucks, this is so bad, we're so bad, we are so bad, we suck, we're trash, we are trash, trash team, worst team, we're getting destroyed, we're getting stomped, getting stomped, getting gapped, i give up, 输了, 要输了, 输定了, 完了, 没救了, 打不过, 投了, 投降, 别打了, 没希望, 崩了, 我们好菜, 赢不了, 没法打
+
+# FRUSTRATION: exclamations and swearing that aren't aimed at anyone ("oh
+# fuck", "卧槽"). Not shown and not scored; listed so they're never mistaken
+# for anything else.
 Frustration: fuck, fucking, shit, wtf, what the fuck, seriously, come on, cmon, unbelievable, oh my god, ugh, bro why, dude, 卧槽, 我靠, 妈的, 搞什么, 什么鬼, 服了, 无语, 好菜
 
 Accountability: my bad, mb, my fault, sorry, that's on me, i messed up, i misplayed, i fucked up, i screwed up, 我的锅, 我的错, 对不起, 不好意思, 怪我, 我失误

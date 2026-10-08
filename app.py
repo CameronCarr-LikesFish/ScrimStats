@@ -433,6 +433,8 @@ def main():
     if "--ui-test" in sys.argv:
         ui_test()
         return
+    import display
+    display.per_monitor_dpi()            # sharp on every monitor, whatever its scaling
     import webview
     if not single_instance():
         webview.create_window(APP_NAME, html=f"<p style='font:15px system-ui;padding:20px'>"
@@ -457,6 +459,15 @@ def main():
         api._shutdown()
         return True
     window.events.closing += on_closing
+
+    def on_shown():
+        try:
+            hwnd = window.native.Handle.ToInt32()
+            display.fit_on_screen(hwnd)
+            display.follow_monitor_scale(hwnd)
+        except Exception as error:      # cosmetic: never stop the app over it
+            log(f"(Couldn't set up per-monitor sizing: {error})")
+    window.events.shown += on_shown
     webview.start(icon=str(bundled("icon.ico")) if bundled("icon.ico").exists() else None)
 
 

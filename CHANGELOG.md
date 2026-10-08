@@ -24,6 +24,104 @@ development was 16.19.
 
 ---
 
+## [2.5.0]: 2026-10-08: Champions, correct win/loss, between games, sharp on every monitor
+
+Asked for, while looking at 2.4.2:
+
+- the window adjusting to each monitor
+- a "greater context" button on flame lines
+- stats only from inside games, with a separate between-games rundown
+- per-champion win rates with champion icons, downloaded ahead of time
+- a much higher bar for "negative": "we're so fucked", not "oh fuck"
+
+### Fixed
+
+- **Win/loss was wrong for spectated games.** The game reports "Win" or
+  "Lose" from one side's point of view. For a spectator that turned out to
+  be the blue side (ORDER), not your team. On 2026-10-07 your team was red
+  (CHAOS) in games 1 and 3. Your nexus towers fell at 25:12 and 22:18 and
+  the game still said "Win", so the dashboard showed **2–0** when the
+  scrim was really **1–2**.
+  - The winner now comes from **which side lost both nexus towers in the
+    last 3 minutes**.
+  - If that can't tell (a surrender), it uses the game's Win/Lose, read
+    from the right side: blue for a spectator, or the player's own side.
+    The recorder now saves the player's side (`active_team`) for this.
+  - The result is then turned into **ours**: the side most of the roster's
+    accounts were on.
+  - All three recordings agree with the nexus towers.
+- **Blurry on the second monitor.** That monitor is 1920×1080 at 150%
+  scaling, with the main one at 100%. The window library declared one
+  scale for the whole program, so on the 150% screen Windows stretched a
+  100% picture by 1.5×.
+  - The app now declares **per-monitor scaling** (`display.py`), so it's
+    drawn at each monitor's real resolution.
+  - Windows then doesn't resize the window when it moves between monitors,
+    so a small watcher does: the window keeps the same size on screen,
+    stays inside the screen it's on, and goes back to its full size on a
+    bigger screen. Resizing by hand sets the new size.
+  - Tested with a hidden window on both monitors:
+    - main monitor: 96 DPI, page pixel ratio 1
+    - second monitor: 144 DPI, ratio 1.5 (sharp), 1770×988 physical
+    - back on the main monitor: 1180×820 again
+
+### Added
+
+- **Champions** (dashboard): every champion in your games, with **Riot's
+  icon**, games, W–L and a win-rate bar.
+  - Show **Our picks** (with who played them) or **Played against**.
+  - Sort by most played, best or worst win rate.
+  - It follows the roster and time range.
+  - **Icons are downloaded when the app is built:** every champion,
+    shipped inside the app, so they work offline from the start. A
+    champion newer than the app is downloaded once into `_data/champions`.
+    The icons are Riot's art, so they're never committed to the repository.
+- **More context** on every flame or negative line: everything anyone said
+  from 45 s before to 20 s after, with the line itself in bold.
+- **Between games** (dashboard): what each person said outside the
+  recorded games (lobby, draft, reviews between games): talking time,
+  words, and positive, flame, negative, accountability and shotcall lines.
+  - Nothing said between games counts toward any in-game stat. This was
+    already true for the stats; the flame list mixed them, and now has a
+    **When** filter (in games / between / both).
+- **Negative talk per 10 min** (Attitude).
+
+### Changed
+
+- **"Negative" now has a high bar**, as asked.
+  - New `Negative:` phrase list, defeatist or complaining only: "we're so
+    fucked", "we're going to lose", "it's so over", "we threw", "ff", "this
+    game sucks", "I give up", plus Chinese (输定了, 没救了, 投了…).
+  - Plain swearing and exclamations ("oh fuck", "卧槽") are **Frustration**,
+    which is no longer shown or scored anywhere. The old "other negative"
+    showed 168 such lines from one scrim; now there's 1.
+  - Phrases that looked defeatist but usually weren't were left out after
+    testing on the real scrim: "I'm done" (as in finished), "it's over" ("if
+    I get one kill on this guy, it's over"), "giving up" ("giving up
+    positioning").
+- **Three buttons per line: Flame / Negative / Neither** (were Flame / Not
+  flame).
+  - Lines already marked "Not flame" now count as **Neither**.
+  - "Neither" lines can be listed again (Show: lines you marked
+    "neither"), to undo.
+
+### Verified
+
+- **Real scrim copy:**
+  - results Lose / Win / Lose, which match the nexus towers
+  - 30 champion icons
+  - 1 negative line
+  - flame/negative lines carry 14–28 lines of context
+  - between games: 89 minutes, per person
+- **Dashboard in the app page (browser pane, stand-in backend):**
+  - Champions with icons, Our picks / Played against
+  - More context, with the quoted line highlighted
+  - Negative saved with the right line ID
+  - When = between games
+  - no console errors
+
+---
+
 ## [2.4.2]: 2026-10-08: Lato, sharper text, and Flame / Not flame buttons
 
 Asked for: every font changed to Lato, things made less blurry, and a way to
