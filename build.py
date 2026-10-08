@@ -1,5 +1,5 @@
 """
-Builds "LoL Scrim Comms.exe" (developer use).
+Builds "ScrimStats.exe" (developer use).
 
 Run with a Python that has the requirements installed plus PyInstaller and
 Pillow:

@@ -1,7 +1,7 @@
-LoL Scrim Comms: how to use
-===========================
+ScrimStats: how to use
+======================
 
-Double-click "LoL Scrim Comms.exe". Everything happens in that one window.
+Double-click "ScrimStats.exe". Everything happens in that one window.
 The sections on the left:
 
 HOME

@@ -1,4 +1,4 @@
-# LoL Scrim Comms
+# ScrimStats
 
 A Windows app for reviewing a League of Legends team's scrim voice comms.
 It records what happens in each game, transcribes what everyone said, lines
@@ -30,9 +30,9 @@ the two up on one clock, and tracks each player's comms habits over months.
 
 ## Download and use
 
-1. Download the latest `LoL-Scrim-Comms-*.zip` from
+1. Download the latest `ScrimStats-*.zip` from
    [Releases](../../releases), unzip it anywhere, and double-click
-   **`LoL Scrim Comms.exe`**. No Python needed.
+   **`ScrimStats.exe`**. No Python needed.
 
    Windows may say "Windows protected your PC", because the app isn't
    signed. Click **More info → Run anyway**.
@@ -63,9 +63,9 @@ pip install -r requirements.txt -r requirements-build.txt
 python build.py
 ```
 
-This builds the `.exe` and installs it into a `LoL Scrim Comms` folder next
+This builds the `.exe` and installs it into a `ScrimStats` folder next
 to this source folder. Check a build with
-`"LoL Scrim Comms.exe" --self-test`, then read `_data\self-test.log`.
+`ScrimStats.exe --self-test`, then read `_data\self-test.log`.
 
 To run from source without building: `python app.py`. Set `LSC_HOME` to use
 a different data folder.

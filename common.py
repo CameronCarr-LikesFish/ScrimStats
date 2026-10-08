@@ -1,5 +1,5 @@
 """
-Shared bits for the LoL Scrim Comms app: where every folder and file lives.
+Shared bits for the ScrimStats app: where every folder and file lives.
 
 The app is one folder. When running as the .exe, that folder is wherever the
 .exe is. When running from source (for development), it's the built app
@@ -11,8 +11,8 @@ import shutil
 import sys
 from pathlib import Path
 
-APP_NAME = "LoL Scrim Comms"
-VERSION = "2.3.0"
+APP_NAME = "ScrimStats"
+VERSION = "2.3.1"
 
 
 def app_dir():

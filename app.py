@@ -1,5 +1,5 @@
 """
-LoL Scrim Comms: the app.
+ScrimStats: the app.
 
 One window (ui/index.html, shown with pywebview using the browser engine
 built into Windows) with everything in it:
@@ -13,7 +13,7 @@ built into Windows) with everything in it:
 The page talks to the Api class below. Heavy work runs in background
 threads; their messages go into a log that the page reads every second.
 
-"LoL Scrim Comms.exe --self-test" runs a check without the window.
+"ScrimStats.exe --self-test" runs a check without the window.
 """
 
 import json
@@ -352,7 +352,7 @@ def self_test():
 
 
 def ui_test():
-    """'LoL Scrim Comms.exe --ui-test': opens the real window HIDDEN (nothing
+    """'ScrimStats.exe --ui-test': opens the real window HIDDEN (nothing
     appears on screen), checks the page loaded and can talk to the app,
     visits each tab, then closes. Results go to _data\\ui-test.log."""
     import webview

@@ -24,6 +24,21 @@ development was 16.19.
 
 ---
 
+## [2.3.1]: 2026-10-08: Renamed to ScrimStats
+
+### Changed
+
+- **The app is now called ScrimStats:**
+  - **`ScrimStats.exe`** (was `LoL Scrim Comms.exe`)
+  - the window title and sidebar
+  - the app folder (`ScrimStats`, was `LoL Scrim Comms`), with all data moved
+    over unchanged
+  - the release download (`ScrimStats-<version>-windows.zip`)
+- **The GitHub repository keeps its name** (`lol-scrim-comms`), so existing
+  links keep working.
+
+---
+
 ## [2.3.0]: 2026-10-08: Everything in one app window
 
 Asked for after looking at the first real dashboard: everything should be one
