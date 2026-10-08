@@ -24,6 +24,31 @@ development was 16.19.
 
 ---
 
+## [2.9.1]: 2026-10-08: Coaches never count in game stats
+
+Asked for: coach stuff should never affect in-game stats, because coaches
+don't talk in games. That replaces 2.9.0's "include coaches by default".
+
+### Changed
+
+- **Nothing a coach says counts in a game's stats**: talk share, shotcalls,
+  talking over, fight comms, flame, accountability. A coach also gets no
+  player card or chart line, and doesn't count in team averages or in
+  working out which roster played.
+- **What a coach says goes to Between games**, even if it was said while a
+  recorded game was running, and shows there. Their quoted lines are
+  listed as between-games lines.
+- **The "People" filter is gone** (it's the only way now). Coaches are left
+  out of the op.gg multi-search and the recorder's 3-player check, as in
+  2.9.0.
+
+### Verified
+
+- With one roster member set to Coach: no stat rows or card for them, their
+  lines in Between games, and their quotes listed as between games.
+
+---
+
 ## [2.9.0]: 2026-10-08: Coaches
 
 Asked for: a way to mark people as coaches.

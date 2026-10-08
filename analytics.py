@@ -889,6 +889,8 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
     unmapped = set()
     for u in utterances:
         u["player"] = roster.speaker(u["speaker"])
+        # Coaches don't talk in games: nothing a coach says counts in a game's stats.
+        u["coach"] = bool(u["player"]) and roster.role(u["player"]) == "Coach"
         if u["player"] is None:
             unmapped.add(u["speaker"])
         u["counts"] = classifier.classify(u["text"], u.get("text_en"))
@@ -908,12 +910,13 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
                 u["counts"][NEGATIVE] = 1
         u["review"] = verdict
     # Who started talking while someone else was mid-sentence.
-    ordered = sorted(utterances, key=lambda u: u["t"])
+    ordered = sorted((u for u in utterances if not u["coach"]), key=lambda u: u["t"])
     for i, u in enumerate(ordered):
         u["over"] = any(other["speaker"] != u["speaker"]
                         and other["t"] < u["t"] < other["t_end"] - TALK_OVER_GRACE_S
                         for other in ordered[max(0, i - 20):i])
     track_players = {roster.speaker(t["speaker"]) for t in meta.get("tracks", [])} - {None}
+    track_players = {n for n in track_players if roster.role(n) != "Coach"}
 
     in_session = sorted((g for g in games if g["start"] < end and g["end"] > start),
                         key=lambda g: g["start"])
@@ -931,7 +934,7 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
     for w0, w1, game, number in segments:
         if w1 <= w0:
             continue
-        segment = [u for u in utterances if w0 <= u["t"] < w1]
+        segment = [u for u in utterances if w0 <= u["t"] < w1 and not u["coach"]]
         present = set(track_players)
         entries = {}
         fights, plays, deaths, objectives = [], [], defaultdict(list), []
@@ -953,7 +956,7 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
                 elif kind.endswith("Kill") and any(o in kind for o in OBJECTIVE_EVENTS):
                     objectives.append(e["wall"])
             early_end, late = phase_times(game)
-        team = roster.team_of(present)
+        team = roster.team_of({n for n in present if roster.role(n) != "Coach"})
         result = our_result(game, roster) if game else None
         ours, theirs, side = [], [], None
         if game:
@@ -973,7 +976,7 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
         played[-1]["_window"] = (w0, w1, game, early_end if game else None,
                                  late if game else None, entries)
 
-        for player in sorted(present):
+        for player in sorted(n for n in present if roster.role(n) != "Coach"):
             said = [u for u in segment if u["player"] == player]
             if game:
                 lane = lane_of(roster.role(player), entries.get(player))
@@ -1042,7 +1045,8 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
                 else NEGATIVE if u["counts"].get(NEGATIVE) else None)
         if not kind and not u["review"] and not u["auto_kind"]:
             continue
-        where = next((g for g in played if g["_window"][0] <= u["t"] < g["_window"][1]), None)
+        where = None if u["coach"] else next(
+            (g for g in played if g["_window"][0] <= u["t"] < g["_window"][1]), None)
         clock = phase = None
         if where and where["_window"][2]:
             w0, w1, game, early_end, late, entries = where["_window"]
@@ -1070,7 +1074,7 @@ def analyze_session(path, games, roster, classifier, warnings, reviews=None, dra
     windows = [g["_window"] for g in played if g["_window"][2]]
     if windows:
         gap_minutes = max(0.0, (end - start) - sum(w[1] - w[0] for w in windows)) / 60
-        outside = [u for u in utterances if not any(w[0] <= u["t"] < w[1] for w in windows)]
+        outside = [u for u in utterances if u["coach"] or not any(w[0] <= u["t"] < w[1] for w in windows)]
         team = roster.team_of(track_players)
         for name in sorted({u["player"] or u["speaker"] for u in outside}):
             mine = [u for u in outside if (u["player"] or u["speaker"]) == name]
@@ -1482,7 +1486,6 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         "version": VERSION,
         "players": players,
         "rosters": roster_list,
-        "coaches": sorted({p["name"] for p in roster.players if p.get("role") == "Coach"}),
         "accounts": full_riot_ids(roster, games),
         "region": opgg_region(paths),
         "info_kinds": INFO_KINDS,

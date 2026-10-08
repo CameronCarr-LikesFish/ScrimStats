@@ -158,12 +158,6 @@
         <option value="late">Late game</option>
       </select>
     </label>
-    <label>People
-      <select id="f-people">
-        <option value="all">Players and coaches</option>
-        <option value="players">Players only</option>
-      </select>
-    </label>
     <label>Games
       <select id="f-result">
         <option value="all">All games</option>
@@ -485,7 +479,7 @@ const fmt = (v, m) => v == null ? "–" : (m.unit === "%" ? `${Math.round(v)}%` 
 // The trend chart starts with one point per game (Group by: Game).
 const ROSTERS = (DATA.rosters || []).filter(r => r.players.length);
 const state = { metric: "info", group: "game", result: "all", range: 0,
-                roster: ROSTERS.length ? ROSTERS[0].name : "", phase: "all", people: "all", hidden: new Set(), table: false };
+                roster: ROSTERS.length ? ROSTERS[0].name : "", phase: "all", people: "players", hidden: new Set(), table: false };
 // The players of the roster being looked at (everyone, when there's only one).
 function rosterPlayers() {
   const r = ROSTERS.find(r => r.name === state.roster);
@@ -1129,7 +1123,6 @@ $("f-group").value = state.group;
 $("f-group").addEventListener("change", e => { state.group = e.target.value; renderChart(); });
 $("f-result").addEventListener("change", e => { state.result = e.target.value; renderChart(); renderQuotes(); });
 $("f-range").addEventListener("change", e => { state.range = +e.target.value; renderSummary(); renderAll(); });
-$("f-people").addEventListener("change", e => { state.people = e.target.value; state.hidden.clear(); renderCards(); renderAll(); });
 $("f-phase").addEventListener("change", e => { state.phase = e.target.value; renderCards(); renderAll(); });
 if (ROSTERS.length > 1) {
   $("roster-label").hidden = false;
