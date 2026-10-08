@@ -59,6 +59,8 @@
   .warnings { border-left: 3px solid var(--s4); padding: 10px 14px; background: var(--surface);
     border-radius: 8px; margin-top: 18px; }
   .warnings p { margin: 4px 0; font-size: 14px; }
+  .warnings summary { cursor: pointer; font-size: 14px; color: var(--ink-2); }
+  .warnings[open] summary { margin-bottom: 6px; }
   .filters { display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; }
   .filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--ink-2); }
   select, button {
@@ -101,6 +103,15 @@
   .rev button[aria-pressed="true"].yes { background: var(--bad); border-color: var(--bad); color: #fff; }
   .rev button[aria-pressed="true"].no { background: var(--good); border-color: var(--good); color: #fff; }
   .checked { font-size: 12px; color: var(--ink-2); }
+  .dtabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 22px 0 0; border-bottom: 1px solid var(--grid); }
+  .dtabs button { background: none; border: none; border-bottom: 2px solid transparent; border-radius: 0;
+    padding: 10px 14px; font-size: 15px; color: var(--ink-2); margin-bottom: -1px; }
+  .dtabs button:hover { color: var(--ink); }
+  .dtabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--s1); font-weight: 700; }
+  .dtabs .count { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; font-size: 12px;
+    background: var(--grid); color: var(--ink-2); font-weight: 700; }
+  .dtabs .count:empty { display: none; }
+  .tabpanel > section:first-child { margin-top: 18px; }
   .rev button[aria-pressed="true"].neg { background: var(--s4); border-color: var(--s4); color: #000; }
   .ctx td { background: var(--page); }
   .ctx .line { padding: 2px 0; font-size: 13.5px; color: var(--ink-2); }
@@ -133,147 +144,165 @@
   </header>
   <div id="warnings"></div>
 
-  <section>
-    <h2 id="cards-title">Players: last 30 days</h2>
-    <p class="note" id="cards-note"></p>
-    <div class="cards" id="cards"></div>
-  </section>
+  <div class="filters card" role="group" aria-label="Filters for every tab" style="margin-top:18px">
+    <label id="roster-label" hidden>Roster <select id="f-roster"></select></label>
+    <label>Part of game
+      <select id="f-phase">
+        <option value="all">Whole game</option>
+        <option value="early">Early (laning)</option>
+        <option value="mid">Mid game</option>
+        <option value="late">Late game</option>
+      </select>
+    </label>
+    <label>Games
+      <select id="f-result">
+        <option value="all">All games</option>
+        <option value="Win">Wins only</option>
+        <option value="Lose">Losses only</option>
+      </select>
+    </label>
+    <label>Time
+      <select id="f-range">
+        <option value="0">All time</option>
+        <option value="365">Last 12 months</option>
+        <option value="182">Last 6 months</option>
+        <option value="91">Last 3 months</option>
+      </select>
+    </label>
+  </div>
 
-  <section>
-    <div class="filters card" role="group" aria-label="Filters">
-      <label id="roster-label" hidden>Roster <select id="f-roster"></select></label>
-      <label>Stat <select id="f-metric"></select></label>
-      <label>Part of game
-        <select id="f-phase">
-          <option value="all">Whole game</option>
-          <option value="early">Early (laning)</option>
-          <option value="mid">Mid game</option>
-          <option value="late">Late game</option>
-        </select>
-      </label>
-      <label>Group by
-        <select id="f-group">
-          <option value="game">Game</option>
-          <option value="session">Session</option>
-          <option value="week">Week</option>
-          <option value="month" selected>Month</option>
-        </select>
-      </label>
-      <label>Games
-        <select id="f-result">
-          <option value="all">All games</option>
-          <option value="Win">Wins only</option>
-          <option value="Lose">Losses only</option>
-        </select>
-      </label>
-      <label>Time
-        <select id="f-range">
-          <option value="0">All time</option>
-          <option value="365">Last 12 months</option>
-          <option value="182">Last 6 months</option>
-          <option value="91">Last 3 months</option>
-        </select>
-      </label>
-    </div>
-  </section>
+  <div class="dtabs" role="tablist" aria-label="Dashboard sections">
+    <button role="tab" data-tab="overview" aria-selected="true">Overview</button>
+    <button role="tab" data-tab="champions" aria-selected="false">Champions</button>
+    <button role="tab" data-tab="negativity" aria-selected="false">Flame &amp; negativity <span class="count" id="neg-count"></span></button>
+    <button role="tab" data-tab="between" aria-selected="false">Between games</button>
+    <button role="tab" data-tab="about" aria-selected="false">How it works</button>
+  </div>
 
-  <section class="card">
-    <h2 id="chart-title"></h2>
-    <p class="note" id="chart-desc"></p>
-    <div class="legend" id="legend"></div>
-    <div class="chart" id="chart"></div>
-    <button class="link" id="table-toggle" aria-expanded="false">Show as table</button>
-    <div class="table-wrap" id="chart-table" hidden></div>
-  </section>
+  <div class="tabpanel" id="tab-overview" role="tabpanel">
+    <section>
+      <h2 id="cards-title">Players: last 30 days</h2>
+      <p class="note" id="cards-note"></p>
+      <div class="cards" id="cards"></div>
+    </section>
 
-  <section class="card">
-    <h2>Wins vs losses</h2>
-    <p class="note">How each player's comms differ between games you won and games you lost, for the time range above.</p>
-    <div class="table-wrap" id="winloss"></div>
-  </section>
+    <section class="card">
+      <div class="filters" style="margin-bottom:12px">
+        <label>Stat <select id="f-metric"></select></label>
+        <label>Group by
+          <select id="f-group">
+            <option value="game">Game</option>
+            <option value="session">Session</option>
+            <option value="week">Week</option>
+            <option value="month">Month</option>
+          </select>
+        </label>
+      </div>
+      <h2 id="chart-title"></h2>
+      <p class="note" id="chart-desc"></p>
+      <div class="legend" id="legend"></div>
+      <div class="chart" id="chart"></div>
+      <button class="link" id="table-toggle" aria-expanded="false">Show as table</button>
+      <div class="table-wrap" id="chart-table" hidden></div>
+    </section>
 
-  <section class="card">
-    <h2>Champions</h2>
-    <p class="note">Every champion in your games, for the roster and time range above. Win rate is your team's, whether
-      you played the champion, played against it, or banned it. Pick order and bans come from Drafter.lol drafts added in the
-      Games tab.</p>
-    <p class="note" id="draft-summary"></p>
-    <div class="filters" style="margin-bottom:10px">
-      <label>Show
-        <select id="c-side">
-          <option value="ours">Our picks</option>
-          <option value="theirs">Played against</option>
-          <option value="bans">Bans</option>
-        </select>
-      </label>
-      <label>Pick
-        <select id="c-slot">
-          <option value="all">Any pick</option>
-          <option value="draft1">First pick of the draft</option>
-          <option value="team1">Team's first pick</option>
-          <option value="p13">Picks 1–3 (first phase)</option>
-          <option value="p45">Picks 4–5 (second phase)</option>
-        </select>
-      </label>
-      <label>Sort by
-        <select id="c-sort">
-          <option value="games">Most played</option>
-          <option value="best">Best win rate</option>
-          <option value="worst">Worst win rate</option>
-        </select>
-      </label>
-    </div>
-    <div class="table-wrap" id="champions"></div>
-  </section>
+    <section class="card">
+      <h2>Wins vs losses</h2>
+      <p class="note">How each player's comms differ between games you won and games you lost, for the filters at the top.</p>
+      <div class="table-wrap" id="winloss"></div>
+    </section>
 
-  <section class="card">
-    <h2>Flame and negative talk</h2>
-    <p class="note"><b>Flame</b> is blaming or insulting a teammate. <b>Negative</b> is defeatist or complaining talk
-      ("we're so fucked", "we're going to lose", "ff"). Swearing on its own ("oh fuck") is neither. Every line is quoted
-      word for word; <b>More context</b> shows what everyone said around it. Transcription mistakes happen, so check
-      before raising something. In the app, mark each line <b>Flame</b>, <b>Negative</b> or <b>Neither</b>: your call
-      replaces the automatic one in every stat (Refresh to update the numbers). Click it again to undo.</p>
-    <div class="filters" style="margin-bottom:10px">
-      <label>Show
-        <select id="q-kind">
-          <option value="Flame">Flame</option>
-          <option value="both">Flame + negative</option>
-          <option value="Negative">Negative</option>
-          <option value="Cleared">Lines you marked "neither"</option>
-        </select>
-      </label>
-      <label>When
-        <select id="q-when">
-          <option value="all">In games and between</option>
-          <option value="in">During games</option>
-          <option value="between">Between games</option>
-        </select>
-      </label>
-      <label>Player <select id="q-player"><option value="">Everyone</option></select></label>
-    </div>
-    <p class="note" id="q-note" role="status"></p>
-    <div class="table-wrap" id="quotes"></div>
-  </section>
+    <section class="card">
+      <h2>Sessions</h2>
+      <p class="note">Every scrim block matching the filters at the top, newest first. Talk share = each player's part of all talking during games. Main shotcallers = people making at least 20% of the calls, per game.</p>
+      <div class="table-wrap" id="sessions"></div>
+    </section>
+  </div>
 
-  <section class="card">
-    <h2>Between games</h2>
-    <p class="note">What was said outside the recorded games (lobby, draft, reviews between games). It's kept out of every
-      in-game stat above, and shown here on its own, for the roster and time range above.</p>
-    <div class="table-wrap" id="between"></div>
-  </section>
+  <div class="tabpanel" id="tab-champions" role="tabpanel" hidden>
+    <section class="card">
+      <h2>Champions</h2>
+      <p class="note">Every champion in your games, for the roster and filters at the top. Win rate is your team's, whether
+        you played the champion, played against it, or banned it. Pick order and bans come from Drafter.lol drafts added in the
+        Games tab.</p>
+      <p class="note" id="draft-summary"></p>
+      <div class="filters" style="margin-bottom:10px">
+        <label>Show
+          <select id="c-side">
+            <option value="ours">Our picks</option>
+            <option value="theirs">Played against</option>
+            <option value="bans">Bans</option>
+          </select>
+        </label>
+        <label>Pick
+          <select id="c-slot">
+            <option value="all">Any pick</option>
+            <option value="draft1">First pick of the draft</option>
+            <option value="team1">Team's first pick</option>
+            <option value="p13">Picks 1–3 (first phase)</option>
+            <option value="p45">Picks 4–5 (second phase)</option>
+          </select>
+        </label>
+        <label>Sort by
+          <select id="c-sort">
+            <option value="games">Most played</option>
+            <option value="best">Best win rate</option>
+            <option value="worst">Worst win rate</option>
+          </select>
+        </label>
+      </div>
+      <div class="table-wrap" id="champions"></div>
+    </section>
+  </div>
 
-  <section class="card">
-    <h2>Sessions</h2>
-    <p class="note">Every scrim block in the time range above, newest first. Talk share = each player's part of all talking during games. Main shotcallers = people making at least 20% of the calls, per game.</p>
-    <div class="table-wrap" id="sessions"></div>
-  </section>
+  <div class="tabpanel" id="tab-negativity" role="tabpanel" hidden>
+    <section class="card">
+      <h2>Flame and negative talk</h2>
+      <p class="note"><b>Flame</b> is blaming or insulting a teammate. <b>Negative</b> is defeatist or complaining talk
+        ("we're so fucked", "we're going to lose", "ff"). Swearing on its own ("oh fuck") is neither. Every line is quoted
+        word for word; <b>More context</b> shows what everyone said around it. Transcription mistakes happen, so check
+        before raising something. In the app, mark each line <b>Flame</b>, <b>Negative</b> or <b>Neither</b>: your call
+        replaces the automatic one in every stat (Refresh to update the numbers). Click it again to undo.</p>
+      <div class="filters" style="margin-bottom:10px">
+        <label>Show
+          <select id="q-kind">
+            <option value="Flame">Flame</option>
+            <option value="both">Flame + negative</option>
+            <option value="Negative">Negative</option>
+            <option value="Cleared">Lines you marked "neither"</option>
+          </select>
+        </label>
+        <label>When
+          <select id="q-when">
+            <option value="all">In games and between</option>
+            <option value="in">During games</option>
+            <option value="between">Between games</option>
+          </select>
+        </label>
+        <label>Player <select id="q-player"><option value="">Everyone</option></select></label>
+      </div>
+      <p class="note" id="q-note" role="status"></p>
+      <div class="table-wrap" id="quotes"></div>
+    </section>
+  </div>
 
-  <section class="card">
-    <h2>What the numbers mean</h2>
-    <p class="note">All stats count words and phrases from the transcripts, so they can't hear tone or sarcasm and inherit any transcription mistakes. They're best for trends over weeks and months, not judging a single game. Phrase lists live in Settings\Callout types.txt; who a sentence is about is judged from words like I / you / he (我 / 你 / 他 in Chinese). Chinese lines are sorted using Chinese phrases on the original wording, plus the English translation.</p>
-    <p class="note"><b>Parts of the game.</b> Early (laning) lasts until the first outer tower in that player's lane falls, either team's, and at most until 20:00. Junglers: the first outer tower anywhere. The lane comes from the player's role on the roster (no role = bot lane). Mid game runs until 30:00, or until the first inhibitor falls if that's sooner. Late game is the rest.</p>
-    <dl id="defs"></dl>
-  </section>
+  <div class="tabpanel" id="tab-between" role="tabpanel" hidden>
+    <section class="card">
+      <h2>Between games</h2>
+      <p class="note">What was said outside the recorded games (lobby, draft, reviews between games). It's kept out of every
+        in-game stat, and shown here on its own, for the roster and filters at the top.</p>
+      <div class="table-wrap" id="between"></div>
+    </section>
+  </div>
+
+  <div class="tabpanel" id="tab-about" role="tabpanel" hidden>
+    <section class="card">
+      <h2>What the numbers mean</h2>
+      <p class="note">All stats count words and phrases from the transcripts, so they can't hear tone or sarcasm and inherit any transcription mistakes. They're best for trends over weeks and months, not judging a single game. Phrase lists live in Settings\Callout types.txt; who a sentence is about is judged from words like I / you / he (我 / 你 / 他 in Chinese). Chinese lines are sorted using Chinese phrases on the original wording, plus the English translation.</p>
+      <p class="note"><b>Parts of the game.</b> Early (laning) lasts until the first outer tower in that player's lane falls, either team's, and at most until 20:00. Junglers: the first outer tower anywhere. The lane comes from the player's role on the roster (no role = bot lane). Mid game runs until 30:00, or until the first inhibitor falls if that's sooner. Late game is the rest.</p>
+      <dl id="defs"></dl>
+    </section>
+  </div>
 </main>
 
 <script>
@@ -486,7 +515,10 @@ function renderSummary() {
 function renderHeader() {
   renderSummary();
   if (DATA.warnings.length) {
-    const box = el("div", { class: "warnings", role: "note" }, el("p", {}, el("b", { text: "Heads up" })));
+    // Folded by default, so the player cards are what you see first.
+    const n = DATA.warnings.length;
+    const box = el("details", { class: "warnings", role: "note" },
+      el("summary", {}, el("b", { text: "Heads up" }), ` (${n} note${n === 1 ? "" : "s"}, click to read)`));
     DATA.warnings.forEach(w => box.append(el("p", { text: w })));
     $("warnings").append(box);
   }
@@ -1032,7 +1064,25 @@ function renderDefs() {
 }
 
 // ---------- wire up ----------
-function renderAll() { renderChart(); renderWinLoss(); renderChampions(); renderQuotes(); renderBetween(); renderSessions(); }
+// ---------- tabs ----------
+// Which tab is open survives Refresh (kept on the app page, which stays put).
+function rememberTab(name) { try { window.parent.__scrimstatsTab = name; } catch (e) { /* opened on its own */ } }
+function savedTab() { try { return window.parent.__scrimstatsTab; } catch (e) { return null; } }
+function showTab(name) {
+  document.querySelectorAll(".dtabs button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === name)));
+  document.querySelectorAll(".tabpanel").forEach(p => p.hidden = p.id !== "tab-" + name);
+  rememberTab(name);
+  if (name === "overview") renderChart();        // the chart needs to be visible to measure its width
+}
+document.querySelectorAll(".dtabs button").forEach(b => b.addEventListener("click", () => showTab(b.dataset.tab)));
+function renderNegCount() {
+  const n = (DATA.quotes || []).filter(q => q.kind === "Flame" && inRange(q)
+    && (ROSTERS.length < 2 || q.roster === state.roster || !q.roster)).length;
+  $("neg-count").textContent = n ? String(n) : "";
+  $("neg-count").title = n ? `${n} flame line${n === 1 ? "" : "s"} in this range` : "";
+}
+
+function renderAll() { renderChart(); renderWinLoss(); renderChampions(); renderQuotes(); renderBetween(); renderSessions(); renderNegCount(); }
 const sel = $("f-metric");
 for (const g of [...new Set(METRICS.map(m => m.group))]) {
   const og = el("optgroup", { label: g });
@@ -1067,6 +1117,7 @@ renderHeader();
 renderCards();
 renderDefs();
 renderAll();
+if (savedTab() && document.getElementById("tab-" + savedTab())) showTab(savedTab());
 </script>
 </body>
 </html>

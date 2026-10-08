@@ -24,6 +24,42 @@ development was 16.19.
 
 ---
 
+## [2.6.1]: 2026-10-08: The dashboard in tabs
+
+Asked for: the player cards shown first, and the rest split into tabs at the
+top (champion stats, negativity / examples…).
+
+### Changed
+
+- **Filters at the top apply to every tab:** Roster, Part of game,
+  Wins/Losses, Time.
+- **Tabs:**
+  - **Overview:** the player cards first, then the trend chart, wins vs
+    losses, and sessions. The chart's own Stat and Group by pickers moved
+    into the chart's box.
+  - **Champions:** picks, played against, bans, and side and first-pick
+    records.
+  - **Flame & negativity:** every quoted line, with More context and the
+    Flame / Negative / Neither buttons. The tab shows how many flame lines
+    are in range.
+  - **Between games.**
+  - **How it works:** what every number means.
+- **The tab you were on stays open when you click Refresh** (remembered by
+  the app page, not saved anywhere).
+- **"Heads up" notes are folded into one line** ("Heads up (3 notes, click to
+  read)"), so they no longer push the cards off the first screen.
+
+### Verified
+
+- In the app page (browser pane, stand-in backend):
+  - five tabs; Overview shows 6 player cards and the chart
+  - Champions and Flame & negativity switch correctly
+  - Refresh kept the open tab
+  - switching back to Overview redraws the chart at the right width
+  - no console errors
+
+---
+
 ## [2.6.0]: 2026-10-08: Drafts from Drafter.lol: pick order, bans, sides
 
 Asked for: stats like "our win rate when we first-pick Yunara". The team

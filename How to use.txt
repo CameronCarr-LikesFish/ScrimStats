@@ -15,8 +15,9 @@ HOME
    The Activity box shows what's happening.
 
 DASHBOARD
-   Each player's comms stats, and how they change over time. Pick a roster
-   (Varsity, JV...) and a part of the game (early / mid / late) at the top.
+   Each player's comms stats, and how they change over time. The filters at
+   the top (roster, part of the game, wins/losses, time) apply to every tab:
+   Overview, Champions, Flame & negativity, Between games, How it works.
    Further down: champion win rates, every flame and negative line word for
    word (click "More context" to see what led up to it, and mark each one
    Flame, Negative or Neither), and what was said between games.
