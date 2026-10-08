@@ -237,10 +237,11 @@
         <li><b>Make a private channel</b> in your Discord server (for example <code>#scrim-data</code>). In its settings:
           Integrations → Webhooks → New Webhook → Copy Webhook URL. Paste it here:
           <div class="row" style="margin-top:6px"><input type="text" id="dc-webhook" placeholder="https://discord.com/api/webhooks/…" style="flex:1">
-            <button class="plain" id="dc-save-webhook">Save</button></div></li>
+            <button class="plain" id="dc-save-webhook">Save</button><span class="saved" id="dc-msg1"></span></div></li>
         <li><b>Make the recorder</b> for the player and send them the zip (Discord DM is fine). They unzip it and double-click
           <b>ScrimStats Recorder.exe</b> before scrims.
-          <div class="row" style="margin-top:6px"><button class="plain" id="dc-make">Make recorder for a teammate…</button></div></li>
+          <div class="row" style="margin-top:6px"><input type="text" id="dc-name" placeholder="Teammate's name" style="min-width:160px">
+            <button class="plain" id="dc-make">Make recorder for a teammate…</button><span class="saved" id="dc-msg2"></span></div></li>
         <li><b>Let ScrimStats read the channel</b> (once): at <a href="#" id="dc-portal">discord.com/developers/applications</a>,
           New Application → Bot → Reset Token, copy the token. On the same page turn on <b>Message Content Intent</b>.
           Then OAuth2 → URL Generator: tick <b>bot</b>, then <b>View Channels</b> and <b>Read Message History</b>; open the link
@@ -248,7 +249,7 @@
           <div class="row" style="margin-top:6px">
             <input type="password" id="dc-token" placeholder="Bot token" style="flex:1" autocomplete="off">
             <input type="text" id="dc-channel" placeholder="https://discord.com/channels/…" style="flex:1">
-            <button class="plain" id="dc-save-bot">Save</button>
+            <button class="plain" id="dc-save-bot">Save</button><span class="saved" id="dc-msg3"></span>
           </div></li>
       </ol>
       <div class="row"><button class="plain" id="dc-check">Check Discord now</button><span class="muted" id="dc-status"></span></div>
@@ -581,27 +582,44 @@ async function renderDiscord() {
   if (document.activeElement !== $("dc-webhook")) $("dc-webhook").value = d.webhook || "";
   if (document.activeElement !== $("dc-channel")) $("dc-channel").value = d.channel || "";
   $("dc-token").placeholder = d.bot ? "Bot token saved (paste a new one to replace it)" : "Bot token";
-  $("dc-make").disabled = !d.webhook;
-  $("dc-check").disabled = !(d.bot && d.channel);
+  $("dc-msg1").textContent = d.webhook ? "Saved ✓" : "";
+  $("dc-msg3").textContent = d.bot && d.channel ? "Saved ✓" : "";
   $("dc-status").textContent = d.last_checked ? `Last checked ${d.last_checked}: ${d.last_added} new` : (d.bot && d.channel ? "Not checked yet" : "");
 }
-async function saveDiscord(changes, button) {
-  const r = await api.save_discord(changes);
-  $("dc-status").textContent = r.message; $("dc-status").style.color = r.ok ? "" : "var(--bad)";
-  if (r.ok) { $("dc-token").value = ""; renderDiscord(); }
+// Each step shows its own message next to its button.
+function say(id, r) { $(id).textContent = r.message; $(id).style.color = r.ok ? "" : "var(--bad)"; }
+async function call(fn, id) {
+  try { return await fn(); }
+  catch (e) { const r = { ok: false, message: "Something went wrong: " + (e && e.message || e) }; say(id, r); return r; }
 }
-$("dc-save-webhook").addEventListener("click", () => saveDiscord({ webhook: $("dc-webhook").value.trim() }));
-$("dc-save-bot").addEventListener("click", () => saveDiscord({ bot_token: $("dc-token").value.trim() || null, channel: $("dc-channel").value.trim() }));
+async function saveWebhook() {
+  const link = $("dc-webhook").value.trim();
+  if (!link) return say("dc-msg1", { ok: false, message: "Paste the webhook link first." }), false;
+  const r = await call(() => api.save_discord({ webhook: link }), "dc-msg1");
+  say("dc-msg1", r);
+  return r.ok;
+}
+$("dc-save-webhook").addEventListener("click", saveWebhook);
+$("dc-webhook").addEventListener("change", saveWebhook);              // pasting is enough
+$("dc-save-bot").addEventListener("click", async () => {
+  const r = await call(() => api.save_discord({ bot_token: $("dc-token").value.trim() || null, channel: $("dc-channel").value.trim() }), "dc-msg3");
+  say("dc-msg3", r);
+  if (r.ok) { $("dc-token").value = ""; renderDiscord(); }
+});
 $("dc-make").addEventListener("click", async () => {
-  const name = prompt("Who is this recorder for? (Their name shows on each game they send.)");
-  if (!name || !name.trim()) return;
-  const r = await api.make_recorder(name.trim());
-  $("dc-status").textContent = r.message; $("dc-status").style.color = r.ok ? "" : "var(--bad)";
+  const name = $("dc-name").value.trim();
+  if (!(await saveWebhook())) {
+    say("dc-msg2", { ok: false, message: "First paste the channel's webhook link in step 1." });
+    return;
+  }
+  if (!name) { say("dc-msg2", { ok: false, message: "Type the teammate's name first (it's shown on each game they send)." }); $("dc-name").focus(); return; }
+  say("dc-msg2", { ok: true, message: "Choose where to save it…" });
+  say("dc-msg2", await call(() => api.make_recorder(name), "dc-msg2"));
 });
 $("dc-check").addEventListener("click", async () => {
-  $("dc-status").textContent = "Checking…"; $("dc-status").style.color = "";
-  const r = await api.check_discord();
-  $("dc-status").textContent = r.message; $("dc-status").style.color = r.ok ? "" : "var(--bad)";
+  say("dc-status", { ok: true, message: "Checking…" });
+  const r = await call(() => api.check_discord(), "dc-status");
+  say("dc-status", r);
   if (r.ok && r.added) loaders.games();
 });
 $("dc-portal").addEventListener("click", e => { e.preventDefault(); api.open_link("https://discord.com/developers/applications"); });

@@ -197,7 +197,7 @@ class Api:
     def add_craig(self):
         import webview
         files = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, allow_multiple=True,
+            webview.FileDialog.OPEN, allow_multiple=True,
             directory=str(Path.home() / "Downloads"), file_types=("Craig download (*.zip)", "All files (*.*)"))
         for name in files or []:
             source = Path(name)
@@ -286,7 +286,7 @@ class Api:
         into Game recordings. Same-named files get a new name, never replaced."""
         import webview
         files = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, allow_multiple=True, directory=str(Path.home() / "Downloads"),
+            webview.FileDialog.OPEN, allow_multiple=True, directory=str(Path.home() / "Downloads"),
             file_types=("Game recordings (*.jsonl)", "All files (*.*)"))
         added = 0
         for name in files or []:
@@ -350,6 +350,13 @@ class Api:
 
     def make_recorder(self, name):
         """A zip with ScrimStats Recorder, already connected to the channel."""
+        try:
+            return self._make_recorder(name)
+        except Exception as error:
+            self._log(f"Couldn't make the recorder: {type(error).__name__}: {error}")
+            return {"ok": False, "message": f"Couldn't make it ({type(error).__name__}: {error})."}
+
+    def _make_recorder(self, name):
         import zipfile
         import webview
         import discord_link
@@ -360,7 +367,7 @@ class Api:
         if not exe.exists():
             return {"ok": False, "message": "The recorder isn't included in this copy of the app (run it from the built app)."}
         safe = re.sub(r"[^\w -]", "", name)[:30].strip() or "teammate"
-        target = self._window.create_file_dialog(webview.SAVE_DIALOG, directory=str(Path.home() / "Downloads"),
+        target = self._window.create_file_dialog(webview.FileDialog.SAVE, directory=str(Path.home() / "Downloads"),
                                                  save_filename=f"ScrimStats Recorder ({safe}).zip")
         if not target:
             return {"ok": False, "message": "Cancelled."}

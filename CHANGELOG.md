@@ -24,6 +24,33 @@ development was 16.19.
 
 ---
 
+## [2.7.1]: 2026-10-08: "Make recorder" and the file pickers work
+
+Reported: "Make recorder seems to do nothing."
+
+### Fixed
+
+- **The file pickers never opened.** In pywebview 6 (the version the app
+  is built with), `webview.OPEN_DIALOG` and `webview.SAVE_DIALOG` are
+  leftover functions, not dialog types. Passing them opened nothing, so
+  three buttons were silently broken:
+  - **Make recorder for a teammate…** (save)
+  - **Add Craig download…** (open)
+  - **Add a player's recordings…** (open)
+  They now use `webview.FileDialog.OPEN` / `.SAVE`.
+- **"Make recorder" was greyed out without saying why.** It stayed off
+  until a webhook link was saved, and none had been (pasted but not
+  saved).
+  - The button now always responds.
+  - It saves the webhook link from step 1 first if one is pasted, and
+    says exactly what's missing if not.
+  - A pasted webhook link saves itself.
+  - The teammate's name is a box next to the button (was a pop-up).
+- **Every step shows its own message next to its button,** and any error
+  now appears on screen instead of vanishing.
+
+---
+
 ## [2.7.0]: 2026-10-08: ScrimStats Recorder for teammates, through Discord
 
 Asked for: a small program a player can run during games, ideally with a
