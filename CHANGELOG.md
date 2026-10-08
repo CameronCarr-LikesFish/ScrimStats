@@ -63,6 +63,8 @@ Two things stopped it counting:
 
 ### Added
 
+- **The GitHub repository is now `ScrimStats`** (was `lol-scrim-comms`; old
+  links redirect).
 - **A player's recording can be joined with a spectator's.** One of the five
   players runs ScrimStats and clicks Start recording. Afterwards their files
   go into the spectator's app with **Games → Add a player's recordings…**.
