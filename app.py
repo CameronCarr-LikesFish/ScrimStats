@@ -397,7 +397,8 @@ class Api:
             z.write(exe, "ScrimStats Recorder/ScrimStats Recorder.exe")
             # The roster's accounts, so only custom games with 3+ of them are sent.
             import analytics
-            roster = sorted({rid for p in analytics.load_roster(self._paths.roster) for rid in p["riot"]})
+            roster = sorted({rid for p in analytics.load_roster(self._paths.roster)
+                             if p.get("role") != "Coach" for rid in p["riot"]})
             z.writestr("ScrimStats Recorder/recorder.json",
                        json.dumps({"webhook": webhook, "name": name, "roster": roster}, indent=1))
             z.writestr("ScrimStats Recorder/Read me.txt", readme)

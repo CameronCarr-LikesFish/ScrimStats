@@ -210,7 +210,8 @@
       </div>
       <p class="hint">Keep the same name when someone changes accounts, so their history stays together. Someone on two rosters
         (a sub) can be added to both with the same name. A name with an orange outline wasn't found in your recordings: check it, or remove it.
-        <b>Role</b> decides when their laning phase ends (their lane's first tower); junglers are spotted automatically from Smite.</p>
+        <b>Role</b> decides when their laning phase ends (their lane's first tower); junglers are spotted automatically from Smite.
+        Choose <b>Coach</b> for coaches: they're marked on the dashboard, can be left out of the stats, and aren't counted toward a scrim's 3 players.</p>
       <div class="players" id="players" style="margin-top:12px"></div>
     </div>
     <div class="card">
@@ -416,7 +417,7 @@ $("tr-speaker").addEventListener("change", renderTranscript);
 // ---------- rosters ----------
 // roster.players holds every roster's players: {name, discord: [], riot: [], role, roster}.
 // One person on two rosters has an entry in each, kept in step (same accounts and role).
-const ROLES = ["", "Top", "Jungle", "Mid", "Bot", "Support"];
+const ROLES = ["", "Top", "Jungle", "Mid", "Bot", "Support", "Coach"];
 let roster = { rosters: [], players: [], candidates: { discord: [], riot: [] }, accounts: {}, region: "na" }, showAllAccounts = false, rosterNow = null;
 loaders.roster = async () => {
   roster = await api.roster();
@@ -439,7 +440,7 @@ function assign(kind, value, playerName) {
 }
 const opggUrl = id => { const [name, tag] = id.split("#"); return `https://op.gg/lol/summoners/${roster.region || "na"}/${encodeURIComponent(name)}-${encodeURIComponent(tag || "")}`; };
 $("opgg-multi").addEventListener("click", () => {
-  const ids = [...new Set(roster.players.filter(p => p.roster === rosterNow).map(p => (roster.accounts[p.name] || [])[0]).filter(Boolean))];
+  const ids = [...new Set(roster.players.filter(p => p.roster === rosterNow && p.role !== "Coach").map(p => (roster.accounts[p.name] || [])[0]).filter(Boolean))];
   if (!ids.length) { alert("No accounts with a #tag on this roster yet: pick their accounts below."); return; }
   api.open_link(`https://op.gg/lol/multisearch/${roster.region || "na"}?summoners=${encodeURIComponent(ids.join(","))}`);
 });

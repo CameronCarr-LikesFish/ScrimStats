@@ -24,6 +24,35 @@ development was 16.19.
 
 ---
 
+## [2.9.0]: 2026-10-08: Coaches
+
+Asked for: a way to mark people as coaches.
+
+### Added
+
+- **Coach is a role** in the Rosters tab (next to Top, Jungle, Mid, Bot and
+  Support). It's saved in `Roster.txt` like any role.
+- **Dashboard:** coaches get a "Coach" tag on their card, and a new
+  **People** filter (Players and coaches / Players only) next to the other
+  filters. "Players only" leaves coaches out of the cards, chart lines and
+  team averages.
+- **Left out for coaches:** the op.gg multi-search, and the 3-player check
+  that decides which of a teammate's games the recorder sends to Discord.
+
+### Decisions
+
+- **Coaches are included by default.** What a coach says (shotcalls,
+  flame, accountability) still counts toward the team's stats, and
+  "Players only" is one click away. Share-of-talk stays the share of
+  everything said, so it doesn't change either way.
+
+### Verified
+
+- With one roster member set to Coach: the card shows the tag, and
+  "Players only" removed their card and chart line; no console errors.
+
+---
+
 ## [2.8.0]: 2026-10-08: op.gg links
 
 Asked for: a link to each player's op.gg, and a multi-search with all their

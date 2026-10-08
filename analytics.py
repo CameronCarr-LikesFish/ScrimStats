@@ -64,8 +64,8 @@ NEGATIVE = "Negative"       # defeatist / complaining: "we're so fucked", "ff"
 CONTEXT_BEFORE_S, CONTEXT_AFTER_S = 45, 20   # "more context" around a quoted line
 FLAME_REACH = 5             # "you" / a teammate's name within this many words of a flame phrase
 DEFAULT_ROSTER = "Team"
-ROLES = ("Top", "Jungle", "Mid", "Bot", "Support")
-LANE_OF_ROLE = {"top": "top", "jungle": "any", "mid": "mid", "bot": "bot", "support": "bot"}
+ROLES = ("Top", "Jungle", "Mid", "Bot", "Support", "Coach")
+LANE_OF_ROLE = {"coach": "bot", "top": "top", "jungle": "any", "mid": "mid", "bot": "bot", "support": "bot"}
 
 FIRST_PERSON = {"i", "i'm", "im", "i'll", "i've", "i'd", "my", "me", "mine", "myself"}
 SECOND_PERSON = {"you", "you're", "youre", "your", "yours", "u", "ur", "y'all", "yall",
@@ -1482,6 +1482,7 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         "version": VERSION,
         "players": players,
         "rosters": roster_list,
+        "coaches": sorted({p["name"] for p in roster.players if p.get("role") == "Coach"}),
         "accounts": full_riot_ids(roster, games),
         "region": opgg_region(paths),
         "info_kinds": INFO_KINDS,

@@ -103,6 +103,8 @@
   .rev button[aria-pressed="true"].yes { background: var(--bad); border-color: var(--bad); color: #fff; }
   .rev button[aria-pressed="true"].no { background: var(--good); border-color: var(--good); color: #fff; }
   .checked { font-size: 12px; color: var(--ink-2); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 400; padding: 1px 8px; margin-left: 6px; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--ink-2); }
   a.opgg { font-size: 12px; font-weight: 400; color: var(--s1); text-decoration: none; margin-left: 6px; }
   a.opgg:hover { text-decoration: underline; }
   .dtabs { display: flex; gap: 4px; flex-wrap: wrap; margin: 22px 0 0; border-bottom: 1px solid var(--grid); }
@@ -154,6 +156,12 @@
         <option value="early">Early (laning)</option>
         <option value="mid">Mid game</option>
         <option value="late">Late game</option>
+      </select>
+    </label>
+    <label>People
+      <select id="f-people">
+        <option value="all">Players and coaches</option>
+        <option value="players">Players only</option>
       </select>
     </label>
     <label>Games
@@ -477,11 +485,12 @@ const fmt = (v, m) => v == null ? "–" : (m.unit === "%" ? `${Math.round(v)}%` 
 // The trend chart starts with one point per game (Group by: Game).
 const ROSTERS = (DATA.rosters || []).filter(r => r.players.length);
 const state = { metric: "info", group: "game", result: "all", range: 0,
-                roster: ROSTERS.length ? ROSTERS[0].name : "", phase: "all", hidden: new Set(), table: false };
+                roster: ROSTERS.length ? ROSTERS[0].name : "", phase: "all", people: "all", hidden: new Set(), table: false };
 // The players of the roster being looked at (everyone, when there's only one).
 function rosterPlayers() {
   const r = ROSTERS.find(r => r.name === state.roster);
-  return ROSTERS.length > 1 && r ? r.players : DATA.players;
+  const list = ROSTERS.length > 1 && r ? r.players : DATA.players;
+  return state.people === "all" ? list : list.filter(p => !isCoach(p));
 }
 const inRoster = r => ROSTERS.length < 2 || r.roster === state.roster;
 const inPhase = r => state.phase === "all" || r.phase === state.phase;
@@ -490,8 +499,11 @@ function inRange(r) {
   if (!state.range || !latestDate) return true;
   return parseDate(latestDate) - parseDate(r.date) < state.range * DAY;
 }
+const COACHES = new Set(DATA.coaches || []);
+const isCoach = name => COACHES.has(name);
+const inPeople = r => state.people === "all" || !isCoach(r.player);
 function filteredRows(ignoreResult = false) {
-  return DATA.rows.filter(r => inRange(r) && inRoster(r) && inPhase(r)
+  return DATA.rows.filter(r => inRange(r) && inRoster(r) && inPhase(r) && inPeople(r)
     && (ignoreResult || state.result === "all" || r.result === state.result));
 }
 // Games played (one entry per game, not per player), for the roster being looked at.
@@ -560,6 +572,7 @@ function renderCards() {
     const before = addUp(mine.filter(r => ago(r) >= 30 && ago(r) < 60));
     const card = el("div", { class: "card pcard" },
       el("h3", {}, el("span", { class: "key", style: `background:${color(p)}` }), el("span", { text: p }),
+        ...(isCoach(p) ? [el("span", { class: "badge", text: "Coach" })] : []),
         ...(DATA.accounts && DATA.accounts[p] || []).map((id, i) => opggLink(opggUrl(id), i ? `alt ${i + 1}` : "op.gg", id))));
     if (now.minutes === 0) card.append(el("p", { class: "note", text: "No games in the last 30 days." }));
     for (const k of keys) {
@@ -1116,6 +1129,7 @@ $("f-group").value = state.group;
 $("f-group").addEventListener("change", e => { state.group = e.target.value; renderChart(); });
 $("f-result").addEventListener("change", e => { state.result = e.target.value; renderChart(); renderQuotes(); });
 $("f-range").addEventListener("change", e => { state.range = +e.target.value; renderSummary(); renderAll(); });
+$("f-people").addEventListener("change", e => { state.people = e.target.value; state.hidden.clear(); renderCards(); renderAll(); });
 $("f-phase").addEventListener("change", e => { state.phase = e.target.value; renderCards(); renderAll(); });
 if (ROSTERS.length > 1) {
   $("roster-label").hidden = false;
