@@ -24,6 +24,63 @@ development was 16.19.
 
 ---
 
+## [2.4.2]: 2026-10-08: Lato, sharper text, and Flame / Not flame buttons
+
+Asked for: every font changed to Lato, things made less blurry, and a way to
+mark a line as "not flame" or "yes, flame".
+
+### Added
+
+- **Flame / Not flame buttons** on every line in the dashboard's Flame and
+  negative comments section (in the app; a dashboard opened in a browser
+  only shows the decisions).
+  - **Not flame:** the line stops counting as flame in every stat. It stays
+    in the list under "Other negative", marked "✓ checked by you".
+  - **Flame:** turns any negative line into flame, including ones the
+    phrase lists missed.
+  - **Click the pressed button again to undo** (back to the automatic call).
+  - Decisions are saved in `_data/flame_reviews.json`, keyed by session,
+    time and speaker, so they survive rebuilding the dashboard and changes
+    to the phrase lists.
+  - The list updates straight away. The numbers update on **Refresh**.
+
+### Changed
+
+- **Every font is now Lato**: the app window, the dashboard, the activity
+  log and the settings editor.
+  - Lato is shipped with the app (`ui/fonts`, regular and bold, Latin and
+    Latin Extended), so it works offline.
+  - The dashboard embeds it, so `Dashboard.html` looks the same opened
+    anywhere.
+  - Chinese text falls back to Microsoft YaHei, since Lato has no Chinese
+    characters.
+- **Sharper text and lines:**
+  - **Text:** Windows only uses its sharper ClearType smoothing for text on a
+    solid background. The app's scrolling areas (the main page, the
+    transcript list, tables) had see-through backgrounds, so their text got
+    the softer grayscale smoothing. They now all have solid backgrounds.
+  - **Chart lines:** the chart's grid lines and day separators were drawn
+    between pixels, which smears a 1-pixel line across 2. They now sit
+    exactly on whole pixels.
+  - **Size:** the base text size is 15 px (was 14).
+  - **Checked first:** the display is at 100% scaling, so Windows wasn't
+    stretching the window, and that wasn't the cause.
+
+### Verified
+
+- **App page in the browser pane, with a stand-in backend:**
+  - Lato 400 and 700 load in the window and inside the dashboard.
+  - Not flame → shown as Other negative ✓, with the saved note.
+  - Clicking again → undone.
+  - Flame on an "other negative" line → becomes Flame.
+  - The 3 calls reached the backend with the right line IDs.
+- **Stats:**
+  - Marking one in-game flame line "not flame" took the flame count from 3
+    to 2.
+  - Undoing both decisions restored 3 and left the file empty.
+
+---
+
 ## [2.4.1]: 2026-10-08: The trend chart goes game by game
 
 Asked for: rather than one point per day, one point per game, with the day

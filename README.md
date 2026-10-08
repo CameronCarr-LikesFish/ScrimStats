@@ -86,6 +86,9 @@ a different data folder.
 | `gpu-engine/` | How to build the graphics-card engine (whisper.cpp + Vulkan), and the patch it needs |
 | `build.py` | Packages the `.exe` |
 
+The app's font is [Lato](https://www.latofonts.com/) by Łukasz Dziedzic, included under the
+SIL Open Font License (`ui/fonts/OFL.txt`).
+
 ## History
 
 See [CHANGELOG.md](CHANGELOG.md). It covers every stage from the first

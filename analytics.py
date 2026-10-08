@@ -688,7 +688,7 @@ class Roster:
 # Turning transcripts + games into numbers
 # ---------------------------------------------------------------------------
 
-def analyze_session(path, games, roster, classifier, warnings):
+def analyze_session(path, games, roster, classifier, warnings, reviews=None):
     records = read_jsonl(path)
     meta = next((r for r in records if r.get("type") == "meta"), None)
     utterances = [r for r in records if r.get("type") == "utterance"]
@@ -710,6 +710,18 @@ def analyze_session(path, games, roster, classifier, warnings):
             unmapped.add(u["speaker"])
         u["counts"] = classifier.classify(u["text"], u.get("text_en"))
         u["n_words"] = word_count(u["text"])
+        # Flame / Not flame decisions made in the dashboard replace the automatic call.
+        u["qid"] = f"{session_id}|{u['t']:.2f}|{u['speaker']}"
+        u["auto_flame"] = bool(u["counts"].get(AT_TEAMMATES))
+        verdict = (reviews or {}).get(u["qid"])
+        if verdict == "not" and u["counts"].get(AT_TEAMMATES):
+            del u["counts"][AT_TEAMMATES]
+            u["counts"][AT_SELF] = 1           # still shown under "other negative"
+        elif verdict == "flame":
+            u["counts"][AT_TEAMMATES] = 1
+            u["counts"].pop(AT_SELF, None)
+            u["counts"].pop("Shotcalling", None)
+        u["review"] = verdict
     # Who started talking while someone else was mid-sentence.
     ordered = sorted(utterances, key=lambda u: u["t"])
     for i, u in enumerate(ordered):
@@ -836,7 +848,8 @@ def analyze_session(path, games, roster, classifier, warnings):
             clock = to_game_time(game, u["t"])
             lane = lane_of(roster.role(u["player"]), entries.get(u["player"]))
             phase = "early" if clock < early_end(lane) else "mid" if clock < late else "late"
-        quotes.append({**base, "kind": kind, "player": u["player"] or u["speaker"],
+        quotes.append({**base, "id": u["qid"], "review": u["review"], "auto_flame": u["auto_flame"],
+                       "kind": kind, "player": u["player"] or u["speaker"],
                        "on_roster": u["player"] is not None,
                        "game": where["game"] if where else None,
                        "roster": where["roster"] if where else roster.team_of({u["player"]}),
@@ -926,6 +939,41 @@ def write_csv(path, rows):
 # ---------------------------------------------------------------------------
 # Build everything
 # ---------------------------------------------------------------------------
+
+def load_flame_reviews(paths):
+    """Lines marked Flame / Not flame in the dashboard: {line id: "flame" | "not"}."""
+    try:
+        return json.loads((paths.data / "flame_reviews.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_flame_review(paths, line_id, verdict):
+    reviews = load_flame_reviews(paths)
+    if verdict in ("flame", "not"):
+        reviews[str(line_id)] = verdict
+    else:
+        reviews.pop(str(line_id), None)        # undone: back to the automatic call
+    (paths.data / "flame_reviews.json").write_text(json.dumps(reviews, indent=1, ensure_ascii=False),
+                                                   encoding="utf-8")
+
+
+def font_css():
+    """Lato, embedded in the dashboard so it looks the same opened anywhere, offline."""
+    import base64
+    ranges = {"latin": "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD",
+              "latin-ext": "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF"}
+    out = []
+    for weight in (400, 700):
+        for subset, unicode_range in ranges.items():
+            path = bundled("ui") / "fonts" / f"lato-{subset}-{weight}-normal.woff2"
+            if path.exists():
+                data = base64.b64encode(path.read_bytes()).decode("ascii")
+                out.append(f'@font-face {{ font-family: "Lato"; font-style: normal; font-weight: {weight}; '
+                           f'font-display: swap; src: url(data:font/woff2;base64,{data}) format("woff2"); '
+                           f'unicode-range: {unicode_range}; }}')
+    return "\n".join(out)
+
 
 def load_game_delays(paths):
     """Per-game spectator delays set in the app: {first file name: seconds}."""
@@ -1057,7 +1105,8 @@ def build(paths, log=print, open_browser=True, open_roster=True):
         warnings.append("No roster yet, so people are shown by Discord name and fight/death/objective "
                         "stats are missing. Open the Rosters tab to say who's who.")
     for path in transcripts:
-        rows, missing, games_here, said = analyze_session(path, games, roster, classifier, warnings)
+        rows, missing, games_here, said = analyze_session(path, games, roster, classifier, warnings,
+                                                          load_flame_reviews(paths))
         quotes.extend(said)
         all_rows.extend(rows)
         played.extend(games_here)
@@ -1112,7 +1161,8 @@ def build(paths, log=print, open_browser=True, open_roster=True):
     }
     template = bundled("dashboard_template.html").read_text(encoding="utf-8")
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    paths.dashboard.write_text(template.replace("/*__DATA__*/null", payload), encoding="utf-8")
+    page = template.replace("/*__DATA__*/null", payload).replace("/*__FONTS__*/", font_css())
+    paths.dashboard.write_text(page, encoding="utf-8")
     if all_rows:
         write_csv(paths.csv, all_rows)
 

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ScrimStats Dashboard</title>
 <style>
+  /*__FONTS__*/
   :root {
     color-scheme: light;
     --page: #f9f9f7;
@@ -42,8 +43,9 @@
   * { box-sizing: border-box; }
   body {
     margin: 0; background: var(--page); color: var(--ink);
-    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    font: 15px/1.5 "Lato", "Segoe UI", "Microsoft YaHei", sans-serif; text-rendering: optimizeLegibility;
   }
+  html { background: var(--page); }
   main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 64px; }
   h1 { font-size: 26px; margin: 0 0 4px; }
   h2 { font-size: 17px; margin: 0 0 4px; }
@@ -93,7 +95,12 @@
   .stat .d { grid-column: 1 / -1; font-size: 12px; color: var(--ink-2); }
   .stat .d.up-good, .stat .d.down-good { color: var(--good); }
   .stat .d.up-bad, .stat .d.down-bad { color: var(--bad); }
-  .table-wrap { overflow-x: auto; }
+  .table-wrap { overflow-x: auto; background: var(--surface); }
+  .rev { display: inline-flex; gap: 4px; }
+  .rev button { font-size: 12px; padding: 3px 9px; border-radius: 999px; }
+  .rev button[aria-pressed="true"].yes { background: var(--bad); border-color: var(--bad); color: #fff; }
+  .rev button[aria-pressed="true"].no { background: var(--good); border-color: var(--good); color: #fff; }
+  .checked { font-size: 12px; color: var(--ink-2); }
   table { border-collapse: collapse; width: 100%; font-size: 14px; }
   th, td { padding: 6px 10px; text-align: right; border-bottom: 1px solid var(--grid);
     white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -177,7 +184,9 @@
     <h2>Flame and negative comments</h2>
     <p class="note">Every line counted as flame, word for word, so it can be looked at directly. "Other negative" adds
       swearing and frustration that wasn't aimed at anyone (it doesn't count against them). Follows the roster, time range
-      and wins/losses filters above. Transcription mistakes happen: check the transcript before raising something.</p>
+      and wins/losses filters above. Transcription mistakes happen: check the transcript before raising something.
+      In the app, mark each line <b>Flame</b> or <b>Not flame</b>: your call replaces the automatic one in every stat
+      (click Refresh at the top to update the numbers), and teaches you which phrases to add or remove in Settings.</p>
     <div class="filters" style="margin-bottom:10px">
       <label>Show
         <select id="q-kind">
@@ -187,6 +196,7 @@
       </label>
       <label>Player <select id="q-player"><option value="">Everyone</option></select></label>
     </div>
+    <p class="note" id="q-note" role="status"></p>
     <div class="table-wrap" id="quotes"></div>
   </section>
 
@@ -541,8 +551,9 @@ function renderChart() {
   // grid + y axis
   const axis = sv("g", { class: "axis" });
   for (let i = 0; i <= 4; i++) {
-    const v = top * i / 4, y = Y(v);
-    axis.append(sv("line", { x1: M.l, x2: W - M.r, y1: y, y2: y, stroke: i ? "var(--grid)" : "var(--axis)", "stroke-width": 1 }));
+    const v = top * i / 4, y = Y(v), crisp = Math.round(y) + 0.5;
+    axis.append(sv("line", { x1: M.l, x2: W - M.r, y1: crisp, y2: crisp, stroke: i ? "var(--grid)" : "var(--axis)",
+      "stroke-width": 1, "shape-rendering": "crispEdges" }));
     const t = sv("text", { x: M.l - 8, y: y + 4, "text-anchor": "end" });
     t.textContent = m.unit === "%" ? `${Math.round(v)}%` : String(Math.round(v * 10) / 10);
     axis.append(t);
@@ -564,7 +575,7 @@ function renderChart() {
     days.forEach((day, k) => {
       const a = X(day.list[0]), b = X(day.list[day.list.length - 1]);
       if (k && step >= 22) {           // lines between days, while they're not too crowded
-        const sep = (a + X(days[k - 1].list[days[k - 1].list.length - 1])) / 2;
+        const sep = Math.round((a + X(days[k - 1].list[days[k - 1].list.length - 1])) / 2) + 0.5;
         axis.append(sv("line", { x1: sep, x2: sep, y1: M.t, y2: H - 4, stroke: "var(--grid)", "stroke-width": 1, "stroke-dasharray": "3 3" }));
       }
       const mid = (a + b) / 2, label = parseDate(day.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -756,9 +767,19 @@ function renderSessions() {
 
 // ---------- flame and negative comments ----------
 const clockText = s => s == null ? "between games" : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+// The app (not a browser) can save Flame / Not flame decisions.
+const APP = (() => { try { return window.parent !== window && window.parent.pywebview ? window.parent.pywebview.api : null; } catch (e) { return null; } })();
+async function review(q, verdict) {
+  verdict = q.review === verdict ? null : verdict;          // clicking it again undoes it
+  try { await APP.review_flame(q.id, verdict); } catch (e) { alert("Couldn't save that: " + e); return; }
+  q.review = verdict; q.touched = true;
+  q.kind = verdict === "flame" ? "Flame" : verdict === "not" ? "Frustration" : (q.auto_flame ? "Flame" : "Frustration");
+  renderQuotes();
+  $("q-note").textContent = "Saved. Click Refresh at the top of the app to update the numbers.";
+}
 function renderQuotes() {
   const kind = $("q-kind").value, who = $("q-player").value;
-  const list = (DATA.quotes || []).filter(q => (kind === "all" || q.kind === "Flame") && (!who || q.player === who)
+  const list = (DATA.quotes || []).filter(q => (kind === "all" || q.kind === "Flame" || q.touched) && (!who || q.player === who)
     && inRange(q) && (ROSTERS.length < 2 || q.roster === state.roster || !q.roster)
     && (state.result === "all" || (q.game && gameResult(q) === state.result)));
   const wrap = $("quotes");
@@ -766,7 +787,7 @@ function renderQuotes() {
     wrap.replaceChildren(el("p", { class: "empty", text: kind === "Flame" ? "No flame in this range. 👍" : "Nothing negative in this range." }));
     return;
   }
-  const head = el("tr", {}, ...["When", "Game", "Who", "Type", "What they said"].map(t => el("th", { text: t, style: "text-align:left" })));
+  const head = el("tr", {}, ...["When", "Game", "Who", "Type", "What they said", APP ? "Is this flame?" : ""].map(t => el("th", { text: t, style: "text-align:left" })));
   const body = el("tbody");
   for (const q of [...list].reverse()) {
     const said = el("td", { style: "white-space:normal;text-align:left;min-width:280px" }, `“${q.text}”`);
@@ -775,10 +796,25 @@ function renderQuotes() {
       el("td", { text: `${dayName(parseDate(q.date))} ${q.time}` }),
       el("td", { style: "text-align:left", text: q.game ? `Game ${q.game}, ${clockText(q.clock)}${q.phase ? " (" + q.phase + ")" : ""}` : "between games" }),
       el("td", { style: "text-align:left", text: q.player + (q.on_roster ? "" : " (not on roster)") }),
-      el("td", { style: "text-align:left;color:" + (q.kind === "Flame" ? "var(--bad)" : "var(--ink-2)"), text: q.kind === "Flame" ? "Flame" : "Other negative" }),
-      said));
+      el("td", { style: "text-align:left;color:" + (q.kind === "Flame" ? "var(--bad)" : "var(--ink-2)") },
+        q.kind === "Flame" ? "Flame" : "Other negative",
+        q.review ? el("div", { class: "checked", text: "✓ checked by you" }) : null),
+      said,
+      reviewCell(q)));
   }
   wrap.replaceChildren(el("table", {}, el("thead", {}, head), body));
+}
+function reviewCell(q) {
+  const td = el("td", { style: "text-align:left" });
+  if (!APP) return td;
+  const b = (cls, verdict, text) => {
+    const button = el("button", { class: cls, "aria-pressed": String(q.review === verdict), text,
+      title: q.review === verdict ? "Click again to undo" : "" });
+    button.addEventListener("click", () => review(q, verdict));
+    return button;
+  };
+  td.append(el("span", { class: "rev" }, b("yes", "flame", "Flame"), b("no", "not", "Not flame")));
+  return td;
 }
 const gameResult = q => ((DATA.games || []).find(g => g.session === q.session && g.game === q.game) || {}).result;
 [...new Set((DATA.quotes || []).map(q => q.player))].sort().forEach(n => $("q-player").append(el("option", { value: n, text: n })));

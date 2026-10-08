@@ -219,6 +219,13 @@ class Api:
         summary = next((l for l in lines if l.startswith("Dashboard updated")), "")
         return {"html": html, "summary": summary.replace("Dashboard updated: ", "")}
 
+    def review_flame(self, line_id, verdict):
+        """Called from the dashboard's Flame / Not flame buttons. verdict:
+        "flame", "not", or None to go back to the automatic call."""
+        import analytics
+        analytics.save_flame_review(self._paths, str(line_id), verdict)
+        return True
+
     # ----- transcripts -----
 
     def transcripts(self):

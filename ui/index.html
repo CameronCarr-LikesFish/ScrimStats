@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ScrimStats</title>
 <style>
+  /* Lato, shipped with the app (ui/fonts, SIL Open Font License), so it works offline. */
+  @font-face { font-family: "Lato"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url("fonts/lato-latin-400-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+  @font-face { font-family: "Lato"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url("fonts/lato-latin-ext-400-normal.woff2") format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+  @font-face { font-family: "Lato"; font-style: normal; font-weight: 700; font-display: swap;
+    src: url("fonts/lato-latin-700-normal.woff2") format("woff2"); unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+  @font-face { font-family: "Lato"; font-style: normal; font-weight: 700; font-display: swap;
+    src: url("fonts/lato-latin-ext-700-normal.woff2") format("woff2"); unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
   :root {
     color-scheme: light;
     --page: #f9f9f7; --surface: #fcfcfb; --raised: #ffffff; --ink: #0b0b0b; --ink-2: #52514e;
@@ -21,8 +30,10 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
+  html { background: var(--page); }
   body { margin: 0; background: var(--page); color: var(--ink);
-    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; overflow: hidden; }
+    font: 15px/1.5 "Lato", "Segoe UI", "Microsoft YaHei", sans-serif; text-rendering: optimizeLegibility;
+    display: flex; overflow: hidden; }
   nav { width: 200px; flex: none; background: var(--surface); border-right: 1px solid var(--border);
     display: flex; flex-direction: column; padding: 18px 10px; gap: 2px; }
   nav .brand { font-weight: 700; font-size: 16px; padding: 0 10px 2px; }
@@ -33,7 +44,7 @@
   nav button:focus-visible { outline: 2px solid var(--accent); }
   nav .spacer { flex: 1; }
   nav .engine { font-size: 12px; color: var(--muted); padding: 8px 12px; }
-  main { flex: 1; overflow: auto; }
+  main { flex: 1; overflow: auto; background: var(--page); }
   .page { display: none; padding: 24px 28px 40px; max-width: 1100px; }
   .page.active { display: block; }
   .page.full { max-width: none; height: 100%; padding: 0; display: none; flex-direction: column; }
@@ -56,7 +67,7 @@
   .dot.on { background: var(--good); box-shadow: 0 0 0 3px rgba(12,163,12,0.2); }
   .status { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
   .log { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; height: 260px;
-    overflow: auto; padding: 10px 12px; font: 12px/1.5 Consolas, "Cascadia Mono", monospace; white-space: pre-wrap; }
+    overflow: auto; padding: 10px 12px; font: 13px/1.55 "Lato", "Segoe UI", "Microsoft YaHei", sans-serif; white-space: pre-wrap; }
   .log .t { color: var(--muted); }
   table { border-collapse: collapse; width: 100%; }
   th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
@@ -65,7 +76,7 @@
   select, input[type=text], input[type=number] { font: inherit; color: var(--ink); background: var(--raised);
     border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
   input[type=text] { min-width: 180px; }
-  textarea { width: 100%; min-height: 420px; font: 12.5px/1.5 Consolas, "Cascadia Mono", monospace; color: var(--ink);
+  textarea { width: 100%; min-height: 420px; font: 14px/1.55 "Lato", "Segoe UI", "Microsoft YaHei", sans-serif; color: var(--ink);
     background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 12px; resize: vertical; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 4px 2px 10px; margin: 2px 4px 2px 0;
     border-radius: 999px; background: var(--hover); border: 1px solid var(--border); font-size: 13px; }
@@ -77,10 +88,11 @@
   .badge.warn { border-color: var(--warn); }
   .saved { color: var(--good); font-size: 13px; }
   .split { display: grid; grid-template-columns: 280px 1fr; gap: 16px; }
+  .list { background: var(--surface); }
   .list button { all: unset; display: block; width: 100%; box-sizing: border-box; cursor: pointer; padding: 8px 10px; border-radius: 8px; }
   .list button:hover, .list button.sel { background: var(--hover); }
   .viewer { background: var(--raised); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
-    font: 13px/1.6 system-ui, "Segoe UI", sans-serif; max-height: calc(100vh - 210px); overflow: auto; }
+    font: 14px/1.6 "Lato", "Segoe UI", "Microsoft YaHei", sans-serif; max-height: calc(100vh - 210px); overflow: auto; }
   .viewer .line { padding: 2px 0; }
   .viewer .when { color: var(--muted); font-variant-numeric: tabular-nums; margin-right: 8px; font-size: 12px; }
   .viewer .who { font-weight: 600; margin-right: 6px; }
