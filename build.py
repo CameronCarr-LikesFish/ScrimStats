@@ -73,6 +73,27 @@ def refresh_runtime(internal):
             print(f"  Updated {name} to {'.'.join(map(str, file_version(newest)))}")
 
 
+def gpu_engine_args(sep):
+    """Bundle the graphics-card engine (pywhispercpp: whisper.cpp built with
+    Vulkan) when it's installed in this Python. It's built from source; see
+    BUILDING-GPU.md. Without it the app simply uses the processor."""
+    try:
+        import _pywhispercpp
+        import pywhispercpp  # noqa: F401
+    except ImportError:
+        print("  Graphics-card engine (pywhispercpp) not installed: building processor-only.")
+        return []
+    engine_dir = Path(_pywhispercpp.__file__).parent
+    dlls = [p for p in engine_dir.glob("*.dll") if p.name.startswith(("whisper", "ggml"))]
+    print("  Bundling graphics-card engine:", ", ".join(sorted(p.name for p in dlls)))
+    args = ["--collect-all", "pywhispercpp", "--hidden-import", "_pywhispercpp",
+            "--collect-all", "platformdirs",
+            "--add-binary", f"{_pywhispercpp.__file__}{sep}."]
+    for dll in dlls:
+        args += ["--add-binary", f"{dll}{sep}."]
+    return args
+
+
 def main():
     BUILD.mkdir(exist_ok=True)
     icon = BUILD / "icon.ico"
@@ -92,8 +113,9 @@ def main():
         "--collect-all", "onnxruntime",
         "--collect-all", "tokenizers",
         "--hidden-import", "poller", "--hidden-import", "transcriber", "--hidden-import", "analytics",
-        str(HERE / "app.py"),
     ]
+    command += gpu_engine_args(sep)
+    command.append(str(HERE / "app.py"))
     print("Packaging… (this takes a few minutes)")
     subprocess.run(command, check=True, cwd=HERE)
 

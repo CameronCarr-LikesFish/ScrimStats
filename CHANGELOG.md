@@ -24,6 +24,128 @@ development was 16.19.
 
 ---
 
+## [2.2.0]: 2026-10-08: Transcribing on the graphics card, and fixing spectated games
+
+The first real scrim (8 speakers, 2.8 hours) went through the app. Two
+problems surfaced:
+- **Transcription on the processor took about 20 minutes per speaker,** so
+  over 2½ hours for the scrim.
+- **The recorder had split each spectated game into dozens of files,** with
+  duplicate events.
+
+Both are fixed. Transcription now runs on the graphics card, about **11×
+faster**.
+
+### Added
+
+- **Graphics-card transcription:** whisper.cpp built with **Vulkan**, which
+  works with AMD, NVIDIA and Intel cards, using the same Whisper "small"
+  model.
+  - The app uses the graphics card automatically, and falls back to the
+    processor if the card or the engine isn't available.
+  - On the test PC (AMD Radeon RX 7900 GRE), a 2.8-hour speaker track takes
+    **about 2 minutes instead of 20**. An hour of real comms audio takes about
+    53 seconds.
+- **Each stretch of speech is transcribed on its own.** The speech detector
+  finds where people talk, and stretches less than a second apart are kept
+  together as one utterance (real audio, nothing spliced).
+  - Every line's start comes from the detector, so a word can't drift onto a
+    neighbouring line.
+  - English or Chinese is still judged on larger chunks, since short clips
+    are hard to judge, and it leans English unless Chinese is clearly more
+    likely.
+- **Uses the "no speech" probability for each segment,** which whisper.cpp
+  computes but the bridge didn't pass on. The bridge is patched to expose it,
+  so invented "Thank you." lines over background noise are dropped.
+- **Non-speech labels are dropped:** "[BLANK_AUDIO]", "[inaudible]", "(M)",
+  "（音乐）". The engine is also told to suppress them.
+- **Repetition junk is dropped:** one character or word repeated many times
+  ("Arcary,,,,,,,,,,,,,,", from the first real transcript) and broken
+  characters ("�").
+- **`gpu-engine/`** has the build steps (`BUILDING-GPU.md`) and the patch
+  applied to the pywhispercpp bridge, so the engine can be rebuilt.
+- **Spectated games are recognised.** The recorder notes when you're
+  spectating (there's no "active player"). Older files are recognised by the
+  game clock going backwards.
+
+### Changed
+
+- **The recorder only starts a new file when the players change.** It used to
+  treat any backwards clock jump as a new game, but a spectator's clock jumps
+  back on every rewind. Last night that split three games into 7, 31 and 24
+  files.
+- **The recorder skips replayed events.** A rewind makes the game replay
+  events with new IDs, so events are now also matched by type, game time and
+  who was involved.
+- **The stats merge pieces of the same game:** files with the same 10
+  players, less than 20 minutes apart. Repeated events are dropped. Last
+  night's 76 files became 15 games, and game 2's 156 logged events became
+  101 real ones.
+- **Event times use the live edge.** A viewer can only be behind the live
+  game, never ahead, so each moment of game time is placed at the earliest
+  real time it was seen. That works through rewinds and replays (ignored) and
+  game pauses (handled). It also uses the time stamps on the events
+  themselves, not just the 10-second clock records.
+- **English stretches get only the English hints.** With the Chinese hint
+  words included, the graphics-card engine put Chinese punctuation into
+  English ("I don﹑t know how good Janna，s with Ashe"). English lines with
+  Chinese punctuation went from several to 0.
+- **The dashboard warns about spectated games.** If custom-lobby spectators
+  see the game late, every event in those games is late by that delay. The
+  delay is still unconfirmed.
+
+### Fixed (during development)
+
+- **Garbled Chinese characters.** The bridge converted each token to text
+  separately, so a Chinese character split across two tokens came out as
+  "�". The bridge now hands back raw bytes, and characters are joined before
+  decoding.
+- **Joining speech with silences between pieces moved boundary words.** The
+  first design glued speech pieces together with short silences, and words
+  near the joins landed on the wrong side ("Oh," ended the previous line).
+  Scored against the processor's line starts, it matched only 47–74% within a
+  second, depending on the silence length. Transcribing each utterance on its
+  own matched **95%**.
+- **"Precise" (DTW) word timing was switched off without notice.** It
+  conflicts with flash attention, so it was being disabled. Tested both ways,
+  DTW was 20% slower and no more accurate, since line starts come from the
+  speech detector, so flash attention stays.
+
+### Verified
+
+All on one speaker's 2.8-hour track from the real scrim, compared with the
+processor result:
+
+- **Speed:** a full track in 1 min 50 s on the graphics card, against about
+  20 min on the processor (11×). An hour of audio took 53 s.
+- **Timing:** 17–18 of 19 processor lines in the first hour had a
+  graphics-card line starting within 1 second.
+- **Completeness:** 405 lines against 137. The extra lines are mostly real
+  short callouts the processor path dropped ("Oh, I have to lock in.", "I feel
+  like if I leave lane, they're just going to kill you.").
+- **Beam search vs. greedy:** greedy was 30% faster, but differed on about
+  half of the noisy short lines, so the more accurate beam search stays.
+- **Packaged `.exe`:** the self-test ran on the graphics card ("using Vulkan0
+  backend") and transcribed the bilingual test recording, 9 of 11 lines in
+  Chinese and all translated, in seconds.
+- **Merging:** 76 game files became 15 games, and last night's three
+  spectated games were each recognised as spectated.
+
+### Known limitations
+
+- **The spectator delay is unconfirmed.** For spectated games, if custom-lobby
+  spectators get one, events will be late by that much. The clock test
+  settles it.
+- **Live-edge timing assumes you were watching live at some point** after
+  each moment that matters. A stretch watched only on rewind gets the time of
+  the next moment you were back at live.
+- **The graphics-card engine needs a Vulkan-capable graphics driver.**
+  Without one, the app uses the processor.
+- **The engine is built from source** (see `gpu-engine/BUILDING-GPU.md`).
+  Building the `.exe` without it gives a processor-only app.
+
+---
+
 ## [2.1.0]: 2026-10-05: Chinese (Mandarin) comms
 
 Some teammates sometimes talk in Chinese. Before this version, the

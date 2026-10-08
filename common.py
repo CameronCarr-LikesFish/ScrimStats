@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "LoL Scrim Comms"
-VERSION = "2.1.0"
+VERSION = "2.2.0"
 
 
 def app_dir():

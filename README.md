@@ -12,6 +12,10 @@ the two up on one clock, and tracks each player's comms habits over months.
   **entirely on your PC** (Whisper), so nobody's voice is uploaded. It knows
   League vocabulary: every champion, item, ability, summoner spell and rune,
   from Riot's official data, in English and Chinese.
+- **Fast on a graphics card:** transcription runs on the GPU through
+  whisper.cpp + Vulkan (AMD, NVIDIA or Intel), about 11× faster than on the
+  processor. A 3-hour, 8-person scrim took 11 minutes. Without a usable
+  graphics card it falls back to the processor.
 - **English and Mandarin Chinese:** it detects which language is being
   spoken, even in mixed sentences. Chinese lines are kept in Chinese with a
   rough English translation, and the stats read Chinese directly.
@@ -75,6 +79,7 @@ a different data folder.
 | `dashboard_template.html` | The dashboard page |
 | `common.py` | Where every folder lives |
 | `defaults/` | Starting settings: callout phrase lists, League words, nicknames, corrections |
+| `gpu-engine/` | How to build the graphics-card engine (whisper.cpp + Vulkan), and the patch it needs |
 | `build.py` | Packages the `.exe` |
 
 ## History

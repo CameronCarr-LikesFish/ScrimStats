@@ -1,0 +1,40 @@
+diff --git a/src/main.cpp b/src/main.cpp
+index 6bc3c00..060e2ba 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -271,6 +271,12 @@ int64_t whisper_full_get_segment_t1_wrapper(struct whisper_context_wrapper * ctx
+ }
+ 
+ // https://pybind11.readthedocs.io/en/stable/advanced/cast/strings.html
++// Added (LoL Scrim Comms): how likely a segment is silence/noise, so
++// stock phrases invented over background noise ("Thank you.") can be dropped.
++float whisper_full_get_segment_no_speech_prob_wrapper(struct whisper_context_wrapper * ctx, int i_segment){
++    return whisper_full_get_segment_no_speech_prob(ctx->ptr, i_segment);
++}
++
+ const py::bytes whisper_full_get_segment_text_wrapper(struct whisper_context_wrapper * ctx, int i_segment){
+     const char * c_array = whisper_full_get_segment_text(ctx->ptr, i_segment);
+     size_t length = strlen(c_array); // Determine the length of the array
+@@ -281,8 +287,12 @@ int whisper_full_n_tokens_wrapper(struct whisper_context_wrapper * ctx, int i_se
+      return whisper_full_n_tokens(ctx->ptr, i_segment);
+ }
+ 
+-const char * whisper_full_get_token_text_wrapper(struct whisper_context_wrapper * ctx, int i_segment, int i_token){
+-    return whisper_full_get_token_text(ctx->ptr, i_segment, i_token);
++// Patched (LoL Scrim Comms): return raw bytes. A token can hold part of a
++// multi-byte character (common in Chinese); converting each token to str on
++// its own would fail or garble it. The caller joins bytes, then decodes.
++const py::bytes whisper_full_get_token_text_wrapper(struct whisper_context_wrapper * ctx, int i_segment, int i_token){
++    const char * c_array = whisper_full_get_token_text(ctx->ptr, i_segment, i_token);
++    return py::bytes(c_array, strlen(c_array));
+ }
+ 
+ whisper_token whisper_full_get_token_id_wrapper(struct whisper_context_wrapper * ctx, int i_segment, int i_token){
+@@ -1257,6 +1267,7 @@ PYBIND11_MODULE(_pywhispercpp, m) {
+             "Get whether the next segment is predicted as a speaker turn.");
+ 
+     m.def("whisper_full_get_segment_text", &whisper_full_get_segment_text_wrapper, "Get the text of the specified segment");
++    m.def("whisper_full_get_segment_no_speech_prob", &whisper_full_get_segment_no_speech_prob_wrapper, "Probability that the segment is not speech.");
+     m.def("whisper_full_n_tokens", &whisper_full_n_tokens_wrapper, "Get number of tokens in the specified segment.");
+ 
+     m.def("whisper_full_get_token_text", &whisper_full_get_token_text_wrapper, "Get the token text of the specified token in the specified segment.");

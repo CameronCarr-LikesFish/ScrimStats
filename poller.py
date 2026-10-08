@@ -36,7 +36,7 @@ HEARTBEAT_INTERVAL_S = 60.0
 # milliseconds; Windows takes ~2 s to say nothing is there, so keep this short.
 REQUEST_TIMEOUT_S = (1.0, 2.0)
 GAME_GONE_AFTER_S = 5.0          # silence this long = the game closed
-NEW_GAME_CLOCK_DROP_S = 10.0     # clock jumping back this much = a new game
+PLAYERS_CHECK_S = 10.0           # how often to check the player list (new game?)
 
 # The game uses a self-signed certificate; the connection never leaves this PC.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -60,6 +60,19 @@ def format_game_clock(seconds):
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
+def event_key(event):
+    """What makes an event the same event: its type, when, and who."""
+    return (event.get("EventName"), round(float(event.get("EventTime") or 0), 1),
+            event.get("KillerName"), event.get("VictimName"), event.get("DragonType"),
+            event.get("TurretKilled"), event.get("InhibKilled"), event.get("Acer"))
+
+
+def signature(players):
+    """Who's in the game: the same set of players and champions = the same game."""
+    return tuple(sorted(f"{p.get('riotId') or p.get('summonerName')}|{p.get('championName')}"
+                        for p in players if isinstance(p, dict)))
+
+
 def shout_case(name):
     """'ChampionKill' -> 'CHAMPION_KILL'"""
     return re.sub(r"(?<!^)(?=[A-Z])", "_", str(name)).upper()
@@ -80,6 +93,7 @@ class GameRecording:
         self.path = path
         self.file = open(path, "x", encoding="utf-8", newline="\n")
         self.seen_event_ids = set()
+        self.seen_event_keys = set()    # (type, game time, who) of events already written
         self.events_logged = 0
         self.last_game_time = game_time
         self.last_clock_sync = None
@@ -88,6 +102,9 @@ class GameRecording:
         self.players_written = False
         self.last_players_attempt = None
         self.champion_of = {}
+        self.signature = None           # who's playing (to spot a new game)
+        self.last_players_check = 0.0
+        self.rewind_noted = False
         self.write({
             "type": "meta",
             "script_version": VERSION,
@@ -176,10 +193,11 @@ class Poller:
 
         if self.recording is None:
             self.start_recording(wall_clock, game_time)
-        elif game_time < self.recording.last_game_time - NEW_GAME_CLOCK_DROP_S:
-            self.log("Game clock jumped backwards, so this is a new game.")
-            self.finish_recording("new_game_detected")
-            self.start_recording(wall_clock, game_time)
+        elif game_time < self.recording.last_game_time - 10 and not self.recording.rewind_noted:
+            # A spectator rewinding or replaying. Same game, same file: the
+            # stats work out the real timeline from the clock records.
+            self.log("  (Game clock went back: spectator rewind or replay. Still the same game.)")
+            self.recording.rewind_noted = True
 
         rec = self.recording
         rec.last_game_time = game_time
@@ -192,6 +210,17 @@ class Poller:
 
         if not rec.players_written:
             self.try_record_players(wall_clock, game_time)
+        elif now - rec.last_players_check >= PLAYERS_CHECK_S:
+            # A different set of players means a new game, even if the game
+            # API never went quiet in between.
+            rec.last_players_check = now
+            players = self.fetch("playerlist")
+            if isinstance(players, list) and players and signature(players) != rec.signature:
+                self.log("Different players: this is a new game.")
+                self.finish_recording("new_game_detected")
+                self.start_recording(wall_clock, game_time)
+                rec = self.recording
+                self.try_record_players(wall_clock, game_time)
 
         feed = self.fetch("eventdata")
         events = feed.get("Events") if isinstance(feed, dict) else None
@@ -219,6 +248,14 @@ class Poller:
         rec = self.recording
         new_events = [e for e in events
                       if isinstance(e, dict) and e.get("EventID") not in rec.seen_event_ids]
+        # A spectator rewind replays events with NEW IDs; skip exact repeats.
+        for event in list(new_events):
+            key = event_key(event)
+            if key in rec.seen_event_keys:
+                rec.seen_event_ids.add(event.get("EventID"))
+                new_events.remove(event)
+            else:
+                rec.seen_event_keys.add(key)
         if rec.first_event_batch and new_events and game_time > 60:
             self.log(f"  (Started mid-game: catching up on {len(new_events)} earlier events.)")
         rec.first_event_batch = False
@@ -253,9 +290,16 @@ class Poller:
                     rec.champion_of[name.split("#")[0]] = champion
             summary.append({key: p.get(key) for key in
                             ("riotId", "summonerName", "championName", "team", "position", "isBot")})
+        # A spectator has no "active player" of their own.
+        active = self.fetch("activeplayername")
+        spectator = not (isinstance(active, str) and active.strip())
         rec.write({"type": "players", "wall_clock": wall_clock, "game_time": game_time,
-                   "players": summary})
+                   "spectator": spectator, "players": summary})
         rec.players_written = True
+        rec.signature = signature(players)
+        rec.last_players_check = now
+        if spectator:
+            self.log("  (Watching as a spectator.)")
 
     def describe(self, event):
         """One readable line for the app window (the file gets the raw event)."""

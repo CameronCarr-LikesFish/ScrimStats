@@ -22,6 +22,7 @@ Who a sentence is about is judged from its words: "I / my / me" = yourself,
 champion name = the enemy. It's a rule of thumb, not understanding.
 """
 
+import bisect
 import csv
 import json
 import os
@@ -302,46 +303,118 @@ class Classifier:
 # Game recordings
 # ---------------------------------------------------------------------------
 
-def event_wall_time(record, syncs):
-    """Real-world time of an event: count back from when the recorder saw it
-    (usually within a second), or use the clock_sync pairs if it was seen
-    much later (recorder started mid-game)."""
-    event_time, seen_game = record.get("EventTime"), record.get("game_time")
-    seen_wall = parse_iso(record["wall_clock"])
-    if event_time is None:
-        return seen_wall
-    if seen_game is not None and 0 <= seen_game - event_time <= 3:
-        return seen_wall - (seen_game - event_time)
-    later = [(g, w) for g, w in syncs if g >= event_time]
-    if later:
-        g, w = min(later)
-        return w - (g - event_time)
-    if syncs:
-        g, w = max(syncs)
-        return w + (event_time - g)
-    return seen_wall
+SPECTATOR_DELAY_S = 0.0   # if spectators see the game late, how many seconds (see warnings)
+SAME_GAME_GAP_S = 20 * 60  # files of the same players this close together are one game
 
 
-def load_game(path):
+def live_timeline(observations):
+    """Turns (game time, real time) observations into a function that gives
+    the real time each moment of the game actually happened.
+
+    A viewer can only ever be BEHIND the live game, never ahead: at any
+    observation, real - game is at least the live offset. So the live offset
+    for game moment g is the smallest (real - game) among all observations at
+    or after g. That copes with:
+      - spectator rewinds and replays (those observations have a bigger gap,
+        so they're ignored),
+      - game pauses (the gap grows after a pause, and moments before the pause
+        still use the smaller gap from before it)."""
+    obs = sorted((g, w) for g, w in observations if g is not None)
+    if not obs:
+        return lambda g: None
+    games = [g for g, _ in obs]
+    suffix, best = [], float("inf")
+    for g, w in reversed(obs):
+        best = min(best, w - g)
+        suffix.append(best)
+    suffix.reverse()
+
+    def real_time(g):
+        i = bisect.bisect_left(games, g)
+        return g + (suffix[i] if i < len(obs) else suffix[-1])
+    return real_time
+
+
+def event_key(event):
+    """What makes an event the same event (a spectator rewind replays events
+    with new IDs): its type, game time, and who was involved."""
+    return (event.get("EventName"), round(float(event.get("EventTime") or 0), 1),
+            event.get("KillerName"), event.get("VictimName"), event.get("DragonType"),
+            event.get("TurretKilled"), event.get("InhibKilled"), event.get("Acer"))
+
+
+def player_signature(players):
+    return tuple(sorted(f"{p.get('riotId') or p.get('summonerName')}|{p.get('championName')}"
+                        for p in players if isinstance(p, dict)))
+
+
+def read_game_file(path):
     records = read_jsonl(path)
-    syncs, walls, players, events, result = [], [], [], [], None
+    walls, observations, players, raw_events, spectator = [], [], [], [], False
+    previous = None
     for r in records:
         stamp = r.get("wall_clock") or r.get("started_at")
         if stamp:
             walls.append(parse_iso(stamp))
+        if r.get("wall_clock") and r.get("game_time") is not None and r.get("type") in ("clock_sync", "event"):
+            observations.append((float(r["game_time"]), parse_iso(r["wall_clock"])))
         if r.get("type") == "clock_sync" and r.get("game_time") is not None:
-            syncs.append((r["game_time"], parse_iso(r["wall_clock"])))
+            if previous is not None and r["game_time"] < previous - 10:
+                spectator = True               # the clock went back: a spectator rewind
+            previous = r["game_time"]
         elif r.get("type") == "players":
             players = r.get("players", [])
-    for r in records:
-        if r.get("type") == "event" and r.get("wall_clock"):
-            events.append({**r, "wall": event_wall_time(r, syncs)})
-            if r.get("EventName") == "GameEnd":
-                result = r.get("Result")
+            spectator = spectator or bool(r.get("spectator"))
+        elif r.get("type") == "event":
+            raw_events.append(r)
     if not walls:
         return None
-    return {"file": path.name, "start": min(walls), "end": max(walls),
-            "players": players, "events": events, "result": result}
+    return {"file": path.name, "start": min(walls), "end": max(walls), "players": players,
+            "signature": player_signature(players), "observations": observations,
+            "raw_events": raw_events, "spectator": spectator}
+
+
+def load_games(paths_list):
+    """Read every game recording, merge pieces of the same game (older
+    versions split a spectated game at every rewind), drop repeated events,
+    and put every event on the real-world clock."""
+    pieces = sorted((g for g in (read_game_file(p) for p in paths_list) if g), key=lambda g: g["start"])
+    merged = []
+    for piece in pieces:
+        last = merged[-1] if merged else None
+        if (last and piece["signature"] and piece["signature"] == last["signature"]
+                and piece["start"] - last["end"] < SAME_GAME_GAP_S):
+            last["files"].append(piece["file"])
+            last["end"] = max(last["end"], piece["end"])
+            last["observations"] += piece["observations"]
+            last["raw_events"] += piece["raw_events"]
+            last["spectator"] = last["spectator"] or piece["spectator"]
+        else:
+            merged.append({**piece, "files": [piece["file"]]})
+    games = []
+    for g in merged:
+        # The game clock going backwards anywhere means a spectator rewound.
+        clock = [gt for gt, _ in sorted(g["observations"], key=lambda o: o[1])]
+        if any(later < earlier - 10 for earlier, later in zip(clock, clock[1:])):
+            g["spectator"] = True
+        real_time = live_timeline(g["observations"])
+        delay = SPECTATOR_DELAY_S if g["spectator"] else 0.0
+        events, seen, result = [], set(), None
+        for r in sorted(g["raw_events"], key=lambda r: parse_iso(r["wall_clock"])):
+            key = event_key(r)
+            if key in seen:
+                continue
+            seen.add(key)
+            wall = real_time(r.get("EventTime")) if r.get("EventTime") is not None else parse_iso(r["wall_clock"])
+            events.append({**r, "wall": wall - delay})
+            if r.get("EventName") == "GameEnd":
+                result = r.get("Result")
+        starts = [e["wall"] for e in events if e.get("EventName") == "GameStart"]
+        games.append({"file": g["files"][0], "files": g["files"],
+                      "start": (min(starts) if starts else g["start"]) - 0,
+                      "end": g["end"], "players": g["players"], "events": events,
+                      "result": result, "spectator": g["spectator"]})
+    return games
 
 
 def name_lookup(game_players):
@@ -573,7 +646,7 @@ def build(paths, log=print, open_browser=True, open_roster=True):
     transcripts = sorted(paths.transcripts.glob("comms_*.jsonl")) if paths.transcripts.is_dir() else []
     game_files = sorted(paths.games.glob("game_*.jsonl")) if paths.games.is_dir() else []
     log(f"Found {len(transcripts)} transcript(s) and {len(game_files)} recorded game(s).")
-    games = [g for g in (load_game(p) for p in game_files) if g]
+    games = load_games(game_files)
 
     if not paths.roster.exists():
         discord_names = set()
@@ -609,6 +682,13 @@ def build(paths, log=print, open_browser=True, open_roster=True):
     if unmapped:
         warnings.append("These Discord names aren't in Roster.txt, so their comms only count "
                         "toward the team total: " + ", ".join(sorted(unmapped)))
+    watched = [g for g in games if g.get("spectator")]
+    if watched:
+        warnings.append(
+            f"{len(watched)} game(s) were recorded while spectating (with rewinds). Event times use "
+            "the moments you were watching live. If spectators in your custom lobby see the game "
+            "late, every event in those games is late by that much: do the clock test (a player "
+            "reads out their game clock on Discord) and tell Claude the difference.")
     if roster.players and games:
         seen = {n for g in games for n in (roster.game_player(p) for p in g["players"]) if n}
         missing_riot = [p["name"] for p in roster.players if p["riot"] and p["name"] not in seen]

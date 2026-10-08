@@ -30,6 +30,7 @@ import struct
 import time
 import zipfile
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 
@@ -435,6 +436,19 @@ def looks_like_hallucination(segment, text):
     subscribe" lines from Chinese video sites."""
     if any(phrase in text for phrase in CHINESE_STOCK_PHRASES):
         return True
+    # Nothing but punctuation ("...", "-") isn't speech.
+    if not re.search(r"[A-Za-z0-9㐀-鿿]", text):
+        return True
+    # Labels for non-speech instead of words: "[BLANK_AUDIO]", "[inaudible]", "(M)".
+    if re.fullmatch(r"\s*[\[(（【][^\])）】]*[\])）】]\s*[.,，。]?\s*", text):
+        return True
+    # Noise often comes out as one character or word repeated over and over
+    # ("Arcary,,,,,,,,,,,,,," in a real scrim), or as broken characters.
+    if re.search(r"(.)\1{7,}", text) or "�" in text:
+        return True
+    words = text.lower().split()
+    if len(words) >= 6 and len(set(words)) <= len(words) / 4:
+        return True
     plain = re.sub(r"[^a-z ]", "", text.lower()).strip()
     if "for watching" in plain or "subscribe" in plain or "subtitles" in plain:
         return True
@@ -492,7 +506,7 @@ TRANSLATE_WINDOW_S = 28    # pack Chinese lines into chunks this long…
 TRANSLATE_GAP_S = 1.5      # …with this much silence between them
 
 
-def translate_chinese_lines(model, audio, lines, translate_hints, label, log, stop_event):
+def translate_chinese_lines(engine, audio, lines, translate_hints, label, log, stop_event):
     """Add an English translation ("text_en") to every Chinese line, using the
     same model on the line's audio. English League words are given as hints
     so "小龙" comes out as "drake" rather than "Xiaolong" more often.
@@ -512,15 +526,7 @@ def translate_chinese_lines(model, audio, lines, translate_hints, label, log, st
         return audio[int(max(0.0, line["start"] - 0.2) * 16000):int((line["end"] + 0.3) * 16000)]
 
     def translate(window, timestamps, use_hints=True):
-        segments, _ = model.transcribe(
-            window, language="zh", task="translate", beam_size=5, vad_filter=False,
-            without_timestamps=not timestamps, condition_on_previous_text=False,
-            hotwords=translate_hints if use_hints else None,
-            # No random retries: when unsure, the model normally retries with some
-            # randomness, which turned 我的锅 into "My barradish" in testing.
-            # Fixed settings give the same, sensible translation every time.
-            temperature=0.0)
-        return list(segments)
+        return engine.translate(window, timestamps, translate_hints if use_hints else None)
 
     batch, length = [], 0.0
     batches = []
@@ -559,34 +565,318 @@ def translate_chinese_lines(model, audio, lines, translate_hints, label, log, st
                                            translate(clip_of(line), False, use_hints=False)).strip()
 
 
-def transcribe_track(model, audio_path, hints, label, log, stop_event, translate_hints=""):
+class Progress:
+    """Prints "x / y (z%), about N left" every 30 seconds."""
+
+    def __init__(self, label, duration, log):
+        self.label, self.duration, self.log = label, duration, log
+        self.started = self.last = time.monotonic()
+
+    def update(self, position):
+        now = time.monotonic()
+        if now - self.last >= 30 and self.duration > 0:
+            done = min(1.0, position / self.duration)
+            left = (now - self.started) / done * (1 - done) if done > 0 else 0
+            self.log(f"    {self.label}: {clock_text(position)} / {clock_text(self.duration)} "
+                     f"({done:.0%}), about {clock_text(left)} left")
+            self.last = now
+
+
+# ---------------------------------------------------------------------------
+# Speech engines. Two ways to run the same Whisper model:
+#   CpuEngine  faster-whisper on the processor (works on any PC)
+#   GpuEngine  whisper.cpp on the graphics card through Vulkan (AMD, NVIDIA
+#              or Intel cards); several times faster where it's available
+# Both turn audio into the same kind of lines, so everything after
+# (pauses, Chinese, translation, stats) is identical.
+# ---------------------------------------------------------------------------
+
+class CpuEngine:
+    name = "processor (faster-whisper)"
+
+    def __init__(self, paths, model_name, log):
+        from faster_whisper import WhisperModel
+        log(f"Loading the speech model ({model_name}) on the processor. The first time, "
+            "this downloads it (about 0.5 GB)…")
+        self.model = WhisperModel(model_name, device="cpu", compute_type="int8",
+                                  cpu_threads=CPU_THREADS, download_root=str(paths.models))
+        self.model.model = LanguageLimiter(self.model.model, LANGUAGES)
+        self.key = f"cpu:{model_name}"
+
+    def count_tokens(self, text):
+        return len(self.model.hf_tokenizer.encode(text, add_special_tokens=False).ids)
+
+    def transcribe_lines(self, audio, hints, label, log, stop_event):
+        duration = len(audio) / 16000
+        bilingual = self.model.model.is_multilingual
+        segments, _ = self.model.transcribe(
+            audio, language=None if bilingual else "en", multilingual=bilingual, beam_size=5,
+            vad_filter=True, vad_parameters={"min_silence_duration_ms": 500},
+            word_timestamps=True, condition_on_previous_text=False,
+            hotwords=hints or None, hallucination_silence_threshold=2.0)
+        results, skipped = [], 0
+        progress = Progress(label, duration, log)
+        for segment in segments:
+            if stop_event is not None and stop_event.is_set():
+                raise Stopped()
+            text = segment.text.strip()
+            if not text or looks_like_hallucination(segment, text):
+                skipped += 1
+                continue
+            results.extend(split_at_pauses(segment))
+            progress.update(segment.end)
+        return results, skipped
+
+    def translate(self, window, timestamps, prompt):
+        segments, _ = self.model.transcribe(
+            window, language="zh", task="translate", beam_size=5, vad_filter=False,
+            without_timestamps=not timestamps, condition_on_previous_text=False, hotwords=prompt,
+            # No random retries: when unsure, the model normally retries with some
+            # randomness, which turned 我的锅 into "My barradish" in testing.
+            # Fixed settings give the same, sensible translation every time.
+            temperature=0.0)
+        return [SimpleNamespace(start=s.start, end=s.end, text=s.text) for s in segments]
+
+
+GPU_MODEL_FILE = "ggml-small.bin"      # the same "small" model, in whisper.cpp's format
+GPU_MODEL_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + GPU_MODEL_FILE
+GPU_WINDOW_S = 28                       # speech is grouped into chunks up to this long
+GPU_GAP_S = 0.6                         # silence put between pieces of speech in a chunk
+PAUSE_S = 1.0                           # a pause this long starts a new line
+GPU_BEAM_SIZE = 5                       # 5 = beam search (more accurate); see GpuEngine
+
+
+class GpuEngine:
+    name = "graphics card (whisper.cpp + Vulkan)"
+
+    def __init__(self, paths, log):
+        from pywhispercpp.model import Model
+        import _pywhispercpp as pw
+        self.pw = pw
+        model_path = paths.models / GPU_MODEL_FILE
+        if not model_path.exists():
+            log(f"Downloading the graphics-card speech model (about 0.5 GB, once)…")
+            download(GPU_MODEL_URL, model_path)
+        log("Loading the speech model on the graphics card…")
+        # Each line's start comes from the speech detector (see transcribe_lines),
+        # so whisper.cpp's slower "DTW" word timing isn't needed: in testing it
+        # was 20% slower and no more accurate than flash attention, the default.
+        self.model = Model(str(model_path), redirect_whispercpp_logs_to=None,
+                           params_sampling_strategy=1 if GPU_BEAM_SIZE > 1 else 0)   # beam / greedy
+        self.key = f"gpu:{GPU_MODEL_FILE}"
+
+    @staticmethod
+    def count_tokens(text):
+        # Close enough for the hint budget: ~3.5 letters per token in English,
+        # ~1.5 tokens per Chinese character.
+        chinese = len(CJK.findall(text))
+        return int(len(CJK.sub("", text)) / 3.5 + chinese * 1.5) + 1
+
+    def _run(self, audio, **params):
+        """One whisper.cpp pass. Every setting is passed every time, because
+        the bridge remembers settings between calls."""
+        base = dict(language="en", translate=False, initial_prompt="", token_timestamps=False,
+                    no_context=True, single_segment=False, print_progress=False,
+                    print_realtime=False, print_timestamps=False, suppress_blank=True,
+                    suppress_nst=True,          # no "[BLANK_AUDIO]"-style labels
+                    temperature=0.0, temperature_inc=0.2,
+                    beam_search={"beam_size": GPU_BEAM_SIZE, "patience": -1.0},
+                    greedy={"best_of": 1})
+        base.update(params)
+        return self.model.transcribe(audio, **base)
+
+    def pick_language(self, audio):
+        """English or Chinese for this chunk (never any other language). Leans
+        English: on short or noisy chunks the guess is shaky, and mistaking
+        English for Chinese garbles it, so Chinese has to be clearly ahead."""
+        _, probabilities = self.model.auto_detect_language(audio)
+        english = float(probabilities.get("en", 0.0))
+        chinese = float(probabilities.get("zh", 0.0))
+        return "zh" if chinese > 2 * english else "en"
+
+    def _words(self):
+        """The words of the last pass, with timings, from the token level.
+        Token texts arrive as raw bytes and are joined before decoding, so a
+        Chinese character split across two tokens comes out whole."""
+        pw, ctx = self.pw, self.model._ctx
+        end_of_text = pw.whisper_token_eot(ctx)
+        segments = []
+        for i in range(pw.whisper_full_n_segments(ctx)):
+            words, current = [], None
+            for j in range(pw.whisper_full_n_tokens(ctx, i)):
+                data = pw.whisper_full_get_token_data(ctx, i, j)
+                if data.id >= end_of_text:                # timestamps and other markers
+                    continue
+                piece = pw.whisper_full_get_token_text(ctx, i, j)
+                piece = piece if isinstance(piece, bytes) else piece.encode("utf-8")
+                starts_word = piece.startswith(b" ") or (current is not None and
+                                                         _ends_with_whole_chinese_char(current["bytes"]))
+                when = data.t0
+                if current is None or starts_word:
+                    if current is not None:
+                        words.append(current)
+                    current = {"bytes": piece, "t0": when, "t1": when, "p": [data.p]}
+                else:
+                    current["bytes"] += piece
+                    current["t1"] = max(current["t1"], when)
+                    current["p"].append(data.p)
+            if current is not None:
+                words.append(current)
+            no_speech = (pw.whisper_full_get_segment_no_speech_prob(ctx, i)
+                         if hasattr(pw, "whisper_full_get_segment_no_speech_prob") else 0.0)
+            segments.append((words, float(no_speech)))
+        return segments
+
+    def transcribe_lines(self, audio, hints, label, log, stop_event):
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        duration = len(audio) / 16000
+        speech = get_speech_timestamps(audio, VadOptions(min_silence_duration_ms=500))
+        # Stretches of speech less than a second apart are one utterance (a
+        # breath mid-sentence isn't a new callout): keep the real audio between
+        # them and transcribe them together. Lines still split at 1 s pauses.
+        merged = []
+        for part in speech:
+            if (merged and part["start"] - merged[-1]["end"] < int(PAUSE_S * 16000)
+                    and part["end"] - merged[-1]["start"] <= (GPU_WINDOW_S - GPU_GAP_S) * 16000):
+                merged[-1]["end"] = part["end"]
+            else:
+                merged.append(dict(part))
+        speech = merged
+        # Group the speech into chunks of up to GPU_WINDOW_S seconds, remembering
+        # where each piece came from so timings can be put back.
+        windows, current, length = [], [], 0
+        limit = GPU_WINDOW_S * 16000
+        gap = int(GPU_GAP_S * 16000)
+        for part in speech:
+            start, end = part["start"], part["end"]
+            while end - start > 0:
+                take = min(end - start, limit - gap)
+                if current and length + take + gap > limit:
+                    windows.append(current)
+                    current, length = [], 0
+                current.append((start, start + take))
+                length += take + gap
+                start += take
+        if current:
+            windows.append(current)
+
+        results, skipped = [], 0
+        progress = Progress(label, duration, log)
+        for pieces in windows:
+            if stop_event is not None and stop_event.is_set():
+                raise Stopped()
+            # Pieces of speech are joined with a short silence between them,
+            # so the model can hear where one ends and the next begins.
+            silence = np.zeros(int(GPU_GAP_S * 16000), dtype=np.float32)
+            chunk = np.concatenate([part for s, e in pieces for part in (audio[s:e], silence)])
+            mapping, position = [], 0.0
+            for s, e in pieces:
+                mapping.append((position, s / 16000, (e - s) / 16000))
+                position += (e - s) / 16000 + GPU_GAP_S
+
+            def original(t):
+                """A time in the joined chunk -> the time in the real recording.
+                A word that lands in one of the added silences belongs to the
+                nearer side of it."""
+                for n, (chunk_start, real_start, length_s) in enumerate(mapping):
+                    if t <= chunk_start + length_s:
+                        return real_start + max(0.0, t - chunk_start)
+                    if n + 1 < len(mapping) and t < mapping[n + 1][0]:
+                        if t - (chunk_start + length_s) < mapping[n + 1][0] - t:
+                            return real_start + length_s           # end of this piece
+                        return mapping[n + 1][1]                   # start of the next
+                chunk_start, real_start, length_s = mapping[-1]
+                return real_start + min(length_s, max(0.0, t - chunk_start))
+
+            # The language is judged on the whole chunk (short clips are hard
+            # to judge)...
+            language = self.pick_language(chunk)
+            # ...but each stretch of speech is transcribed on its own, so every
+            # word's time comes from that stretch and can't drift onto a
+            # neighbouring one. (Joined chunks let boundary words slip across;
+            # the graphics card is fast enough to do it this way.)
+            for s, e in pieces:
+                start_s, length_s = s / 16000, (e - s) / 16000
+                self._run(audio[s:e], language=language, token_timestamps=True,
+                          # English stretches get only the English hints: the
+                          # Chinese ones made the model put Chinese punctuation
+                          # in English ("Janna，s").
+                          initial_prompt=(hints if language == "zh" else hints.split("。")[0]) if hints else "")
+                for words, no_speech in self._words():
+                    made = []
+                    for w in words:
+                        text = w["bytes"].decode("utf-8", errors="ignore")
+                        if not text.strip():
+                            continue
+                        t0 = start_s + min(length_s, w["t0"] / 100)
+                        t1 = start_s + min(length_s, max(w["t1"], w["t0"]) / 100)
+                        made.append(SimpleNamespace(word=text, start=t0, end=t1,
+                                                    probability=float(np.mean(w["p"])) if w["p"] else 0.0))
+                    if not made:
+                        continue
+                    text = "".join(w.word for w in made).strip()
+                    logprob = float(np.mean([np.log(max(w.probability, 1e-6)) for w in made]))
+                    segment = SimpleNamespace(text=text, start=made[0].start, end=made[-1].end,
+                                              words=made, avg_logprob=logprob, no_speech_prob=no_speech)
+                    if looks_like_hallucination(segment, text):
+                        skipped += 1
+                        continue
+                    results.extend(split_at_pauses(segment))
+            progress.update(pieces[-1][1] / 16000)
+        return results, skipped
+
+    def translate(self, window, timestamps, prompt):
+        segments = self._run(window, language="zh", translate=True, initial_prompt=prompt or "",
+                             temperature_inc=0.0)     # no random retries (see CpuEngine)
+        return [SimpleNamespace(start=s.t0 / 100, end=s.t1 / 100, text=s.text) for s in segments]
+
+
+def _ends_with_whole_chinese_char(data):
+    """True when these bytes are complete text ending in a Chinese character
+    (or Chinese punctuation), so the next token starts a new 'word'."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return False                      # the character isn't finished yet
+    return bool(text) and (has_chinese(text[-1]) or text[-1] in "，。？！、：；")
+
+
+def download(url, target):
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp = target.with_suffix(".part")
+    with requests.get(url, stream=True, timeout=60) as response:
+        response.raise_for_status()
+        with open(temp, "wb") as f:
+            for block in response.iter_content(1 << 20):
+                f.write(block)
+    temp.replace(target)
+
+
+USE_GRAPHICS_CARD = True    # False = always use the processor
+
+
+def make_engine(paths, model_name, log):
+    """The graphics card when possible, otherwise the processor."""
+    if USE_GRAPHICS_CARD:
+        try:
+            engine = GpuEngine(paths, log)
+            log(f"Using the {engine.name}.")
+            return engine
+        except Exception as error:
+            log(f"Graphics card not available for transcription ({type(error).__name__}: "
+                f"{error}); using the processor instead.")
+    engine = CpuEngine(paths, model_name, log)
+    log(f"Using the {engine.name}.")
+    return engine
+
+
+def transcribe_track(engine, audio_path, hints, label, log, stop_event, translate_hints=""):
     log(f"  Reading {audio_path.name}…")
     audio = load_audio_16k(audio_path, log)
     duration = len(audio) / 16000
     log(f"  Transcribing {label} ({clock_text(duration)} of audio)…")
-    bilingual = model.model.is_multilingual
-    segments, _ = model.transcribe(
-        audio, language=None if bilingual else "en", multilingual=bilingual, beam_size=5,
-        vad_filter=True, vad_parameters={"min_silence_duration_ms": 500},
-        word_timestamps=True, condition_on_previous_text=False,
-        hotwords=hints or None, hallucination_silence_threshold=2.0)
-    results, skipped = [], 0
-    started = last_report = time.monotonic()
-    for segment in segments:
-        if stop_event is not None and stop_event.is_set():
-            raise Stopped()
-        text = segment.text.strip()
-        if not text or looks_like_hallucination(segment, text):
-            skipped += 1
-            continue
-        results.extend(split_at_pauses(segment))
-        now = time.monotonic()
-        if now - last_report >= 30 and duration > 0:
-            done = min(1.0, segment.end / duration)
-            left = (now - started) / done * (1 - done) if done > 0 else 0
-            log(f"    {label}: {clock_text(segment.end)} / {clock_text(duration)} "
-                f"({done:.0%}), about {clock_text(left)} left")
-            last_report = now
+    started = time.monotonic()
+    results, skipped = engine.transcribe_lines(audio, hints, label, log, stop_event)
     # Which language is each line? Chinese characters mean Chinese (mixed
     # lines like "Kai'Sa 没有 flash 了" count as Chinese).
     for line in results:
@@ -596,7 +886,7 @@ def transcribe_track(model, audio_path, hints, label, log, stop_event, translate
             # Chinese punctuation ("…for this drake，"); use English punctuation.
             line["text"] = line["text"].translate(FULLWIDTH_TO_ASCII).strip()
         line["text_en"] = line["text"] if line["language"] == "en" else ""
-    translate_chinese_lines(model, audio, results, translate_hints or TRANSLATE_GLOSSARY,
+    translate_chinese_lines(engine, audio, results, translate_hints or TRANSLATE_GLOSSARY,
                             label, log, stop_event)
     chinese = sum(1 for line in results if line["language"] == "zh")
     log(f"    {label}: done, {len(results)} lines"
@@ -605,7 +895,7 @@ def transcribe_track(model, audio_path, hints, label, log, stop_event, translate
     return {"duration_s": round(duration, 3), "segments": results, "skipped": skipped}
 
 
-def transcribe_recording(model, folder, paths, vocab, slang, nicknames, fixer,
+def transcribe_recording(engine, folder, paths, vocab, slang, nicknames, fixer,
                          model_name, log, stop_event):
     info = parse_craig_info(folder / "info.txt")
     tracks = sorted((p for p in folder.iterdir() if p.suffix.lower() in AUDIO_EXTENSIONS),
@@ -638,13 +928,14 @@ def transcribe_recording(model, folder, paths, vocab, slang, nicknames, fixer,
     else:
         log("  No recorded games for this time; using general League words.")
     hints, hint_count, hint_total = build_hints(
-        lambda s: model.hf_tokenizer.encode(s, add_special_tokens=False).ids,
+        lambda s: range(engine.count_tokens(s)),
         champions, slang, nicknames, vocab.get("champions_zh"))
 
     work = paths.work / info["id"]
     work.mkdir(parents=True, exist_ok=True)
     translate_hints = translation_hints(champions)
-    settings = {"model": model_name, "hints": hints, "translate_hints": translate_hints,
+    settings = {"model": model_name, "engine": engine.key, "hints": hints,
+                "translate_hints": translate_hints,
                 "languages": list(LANGUAGES),
                 "script_version": VERSION}
     track_results = {}
@@ -657,14 +948,16 @@ def transcribe_recording(model, folder, paths, vocab, slang, nicknames, fixer,
                 log(f"  {label}: already done earlier, reusing.")
                 track_results[track] = saved
                 continue
-        result = transcribe_track(model, track, hints, label, log, stop_event, translate_hints)
+        result = transcribe_track(engine, track, hints, label, log, stop_event, translate_hints)
         result["settings"] = settings
         temp = saved_path.with_suffix(".tmp")
         temp.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
         temp.replace(saved_path)
         track_results[track] = result
 
-    durations = [r["duration_s"] for r in track_results.values()]
+    # (Tracks with no speech at all, e.g. someone who joined for a minute,
+    # are ignored here: they can't be misaligned in any way that matters.)
+    durations = [r["duration_s"] for r in track_results.values() if r["segments"]] or [0.0]
     tracks_aligned = max(durations) - min(durations) <= 2.0
     if not tracks_aligned:
         log("  WARNING: the speakers' audio files have different lengths; timings "
@@ -763,7 +1056,7 @@ def pending_recordings(paths, log=print):
     return [f for f in collect_recordings(paths, log) if not already_transcribed(paths, f)]
 
 
-_model_cache = {}
+_engine_cache = {}
 
 
 def transcribe_all(paths, log=print, stop_event=None, model_name=MODEL_NAME):
@@ -779,21 +1072,14 @@ def transcribe_all(paths, log=print, stop_event=None, model_name=MODEL_NAME):
     nicknames = read_nicknames(paths)
     fixer = TermFixer(vocab, slang, nicknames, read_corrections(paths))
 
-    if model_name not in _model_cache:
-        log(f"Loading the speech model ({model_name}). The first time, this downloads it "
-            "(about 0.5 GB)…")
-        from faster_whisper import WhisperModel
-        whisper = WhisperModel(
-            model_name, device="cpu", compute_type="int8", cpu_threads=CPU_THREADS,
-            download_root=str(paths.models))
-        whisper.model = LanguageLimiter(whisper.model, LANGUAGES)
-        _model_cache[model_name] = whisper
-    model = _model_cache[model_name]
+    if model_name not in _engine_cache:
+        _engine_cache[model_name] = make_engine(paths, model_name, log)
+    engine = _engine_cache[model_name]
 
     done = []
     for folder in to_do:
         try:
-            result = transcribe_recording(model, folder, paths, vocab, slang, nicknames, fixer,
+            result = transcribe_recording(engine, folder, paths, vocab, slang, nicknames, fixer,
                                           model_name, log, stop_event)
             if result:
                 done.append(result)
