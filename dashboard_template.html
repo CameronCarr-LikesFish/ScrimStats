@@ -134,6 +134,7 @@
       </label>
       <label>Group by
         <select id="f-group">
+          <option value="game">Game</option>
           <option value="session">Session</option>
           <option value="week">Week</option>
           <option value="month" selected>Month</option>
@@ -366,11 +367,9 @@ const metric = key => METRICS.find(m => m.key === key);
 const fmt = (v, m) => v == null ? "–" : (m.unit === "%" ? `${Math.round(v)}%` : v >= 100 ? v.toFixed(0) : v.toFixed(1));
 
 // ---------- filters ----------
-// Group by month once there are a few months of data; until then by session
-// (one month would otherwise be a single dot).
-const MONTHS = new Set(DATA.rows.map(r => r.month)).size;
+// The trend chart starts with one point per game (Group by: Game).
 const ROSTERS = (DATA.rosters || []).filter(r => r.players.length);
-const state = { metric: "info", group: MONTHS >= 3 ? "month" : "session", result: "all", range: 0,
+const state = { metric: "info", group: "game", result: "all", range: 0,
                 roster: ROSTERS.length ? ROSTERS[0].name : "", phase: "all", hidden: new Set(), table: false };
 // The players of the roster being looked at (everyone, when there's only one).
 function rosterPlayers() {
@@ -463,6 +462,8 @@ function renderCards() {
 
 // ---------- trend chart ----------
 function periodOf(r) {
+  // One point per game. Game files are named by start time, so they sort in order.
+  if (state.group === "game") return r.game_file ? { key: r.game_file, date: r.date } : null;
   if (state.group === "session") return { key: r.date + "|" + r.session, date: r.date };
   if (state.group === "week") return { key: r.week, date: r.week };
   return { key: r.month, date: r.month };
@@ -471,6 +472,7 @@ function periodLabel(p) {
   const d = parseDate(p.date);
   if (state.group === "month") return monthName(d);
   if (state.group === "week") return "Week of " + dayName(d);
+  if (state.group === "game") return `${dayName(d)}, game ${p.nth}`;
   return dayName(d) + (p.nth > 1 ? ` (#${p.nth})` : "");
 }
 function buildSeries() {
@@ -479,6 +481,7 @@ function buildSeries() {
   const periods = new Map();
   for (const r of rows) {
     const p = periodOf(r);
+    if (!p) continue;
     if (!periods.has(p.key)) periods.set(p.key, { ...p, rows: [] });
     periods.get(p.key).rows.push(r);
   }
@@ -521,12 +524,16 @@ function renderChart() {
 
   const W = Math.max(320, box.clientWidth), H = 320;
   const labelSpace = visible.length <= 4 ? 110 : 16;
-  const M = { l: 44, r: labelSpace, t: 12, b: 30 };
+  const byGame = state.group === "game";
+  const M = { l: 44, r: labelSpace, t: 12, b: byGame ? 48 : 30 };
   const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", tabindex: "0",
     "aria-label": `${m.label} over time. Use left and right arrow keys to read values; the table view lists every value.` });
   const x0 = parseDate(periods[0].date), x1 = parseDate(periods[periods.length - 1].date);
   const span = Math.max(1, x1 - x0);
-  const X = p => periods.length === 1 ? (M.l + W - M.r) / 2 : M.l + (parseDate(p.date) - x0) / span * (W - M.l - M.r);
+  // By game, games are evenly spaced (a week off doesn't leave a gap); otherwise by date.
+  const X = p => periods.length === 1 ? (M.l + W - M.r) / 2
+    : byGame ? M.l + periods.indexOf(p) / (periods.length - 1) * (W - M.l - M.r)
+    : M.l + (parseDate(p.date) - x0) / span * (W - M.l - M.r);
   const maxV = Math.max(...visible.flatMap(s => s.values.map(x => x.v ?? 0)));
   const top = niceMax(maxV * 1.05, m.unit === "%");
   const Y = v => M.t + (1 - v / top) * (H - M.t - M.b);
@@ -540,9 +547,37 @@ function renderChart() {
     t.textContent = m.unit === "%" ? `${Math.round(v)}%` : String(Math.round(v * 10) / 10);
     axis.append(t);
   }
+  if (byGame) {
+    // Two rows: each game's number within its day, and under them the day,
+    // with a faint line between days.
+    const step = periods.length > 1 ? (W - M.l - M.r) / (periods.length - 1) : 999;
+    // Game numbers only while there's room for them (about a season of games);
+    // after that, just the days.
+    if (step >= 22) periods.forEach(p => {
+      const t = sv("text", { x: X(p), y: H - 28, "text-anchor": "middle" });
+      t.textContent = "G" + p.nth;
+      axis.append(t);
+    });
+    const days = [];
+    periods.forEach(p => { if (!days.length || days[days.length - 1].date !== p.date) days.push({ date: p.date, list: [] }); days[days.length - 1].list.push(p); });
+    let lastEnd = -Infinity;
+    days.forEach((day, k) => {
+      const a = X(day.list[0]), b = X(day.list[day.list.length - 1]);
+      if (k && step >= 22) {           // lines between days, while they're not too crowded
+        const sep = (a + X(days[k - 1].list[days[k - 1].list.length - 1])) / 2;
+        axis.append(sv("line", { x1: sep, x2: sep, y1: M.t, y2: H - 4, stroke: "var(--grid)", "stroke-width": 1, "stroke-dasharray": "3 3" }));
+      }
+      const mid = (a + b) / 2, label = parseDate(day.date).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      if (mid - 30 < lastEnd) return;                // no room: skip this day's label
+      const t = sv("text", { x: mid, y: H - 8, "text-anchor": "middle", fill: "var(--ink-2)" });
+      t.textContent = label;
+      axis.append(t);
+      lastEnd = mid + 30;
+    });
+  }
   // x labels: a handful, evenly spread
   const every = Math.max(1, Math.ceil(periods.length / Math.floor((W - M.l - M.r) / 90)));
-  periods.forEach((p, i) => {
+  if (!byGame) periods.forEach((p, i) => {
     if (i % every && i !== periods.length - 1) return;
     if (i === periods.length - 1 && i % every && periods.length > 1 && X(p) - X(periods[i - (i % every)]) < 70) return;
     const t = sv("text", { x: X(p), y: H - 8, "text-anchor": "middle" });
@@ -649,7 +684,7 @@ function renderLegend(series) {
 function renderChartTable(m, periods, series) {
   const wrap = $("chart-table");
   wrap.replaceChildren();
-  const head = el("tr", {}, el("th", { text: state.group === "session" ? "Session" : state.group === "week" ? "Week" : "Month" }));
+  const head = el("tr", {}, el("th", { text: state.group === "game" ? "Game" : state.group === "session" ? "Session" : state.group === "week" ? "Week" : "Month" }));
   series.forEach(s => head.append(el("th", { text: s.name })));
   const body = el("tbody");
   [...periods].reverse().forEach(p => {
@@ -731,14 +766,14 @@ function renderQuotes() {
     wrap.replaceChildren(el("p", { class: "empty", text: kind === "Flame" ? "No flame in this range. 👍" : "Nothing negative in this range." }));
     return;
   }
-  const head = el("tr", {}, ...["When", "Game", "Who", "Type", "What they said"].map(t => el("th", { text: t })));
+  const head = el("tr", {}, ...["When", "Game", "Who", "Type", "What they said"].map(t => el("th", { text: t, style: "text-align:left" })));
   const body = el("tbody");
   for (const q of [...list].reverse()) {
     const said = el("td", { style: "white-space:normal;text-align:left;min-width:280px" }, `“${q.text}”`);
     if (q.text_en) said.append(el("div", { class: "note", style: "margin:2px 0 0", text: "→ " + q.text_en }));
     body.append(el("tr", {},
       el("td", { text: `${dayName(parseDate(q.date))} ${q.time}` }),
-      el("td", { text: q.game ? `Game ${q.game}, ${clockText(q.clock)}${q.phase ? " (" + q.phase + ")" : ""}` : "between games" }),
+      el("td", { style: "text-align:left", text: q.game ? `Game ${q.game}, ${clockText(q.clock)}${q.phase ? " (" + q.phase + ")" : ""}` : "between games" }),
       el("td", { style: "text-align:left", text: q.player + (q.on_roster ? "" : " (not on roster)") }),
       el("td", { style: "text-align:left;color:" + (q.kind === "Flame" ? "var(--bad)" : "var(--ink-2)"), text: q.kind === "Flame" ? "Flame" : "Other negative" }),
       said));

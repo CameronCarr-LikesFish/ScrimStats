@@ -126,6 +126,11 @@ def main():
     built = BUILD / "dist" / APP_NAME
     if sys.platform == "win32":
         refresh_runtime(built / "_internal")
+    if sys.platform == "win32" and app_running():
+        # Replacing files the open app is using fails halfway and leaves the
+        # installed app broken, so stop before touching anything.
+        sys.exit(f"{APP_NAME} is open. Close it, then run this again (the build itself is done, "
+                 f"in {built}).")
     APP_FOLDER.mkdir(exist_ok=True)
     internal = APP_FOLDER / "_internal"
     if internal.exists():
@@ -135,6 +140,12 @@ def main():
     shutil.copy2(HERE / "How to use.txt", APP_FOLDER / "How to use.txt")
     shutil.copy2(HERE / "CHANGELOG.md", APP_FOLDER / "Changelog.md")
     print(f"Installed into {APP_FOLDER}")
+
+
+def app_running():
+    found = subprocess.run(["tasklist", "/FI", f"IMAGENAME eq {APP_NAME}.exe"],
+                           capture_output=True, text=True).stdout
+    return f"{APP_NAME}.exe".lower() in found.lower()
 
 
 if __name__ == "__main__":

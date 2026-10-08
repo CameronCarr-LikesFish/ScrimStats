@@ -24,6 +24,38 @@ development was 16.19.
 
 ---
 
+## [2.4.1]: 2026-10-08: The trend chart goes game by game
+
+Asked for: rather than one point per day, one point per game, with the day
+shown on a second row under it.
+
+### Changed
+
+- **The trend chart now has one point per game**, by default (Group by:
+  **Game**). Session, week and month are still there.
+  - Games are evenly spaced, so a week off doesn't leave a gap and every game
+    gets the same room.
+  - Two rows of labels:
+    - each game's number within its day (G1, G2, G3…)
+    - the date underneath, centred under that day's games
+  - A faint dashed line separates the days.
+  - With many games (more than about 45 across the chart), the game numbers
+    and day lines are left out, and only dates that fit are shown. That keeps
+    a whole season readable.
+  - The tooltip and the table view read "Oct 7, 2026, game 2".
+- The Flame and negative comments table's columns line up with their headings.
+
+### Verified
+
+- **Real scrim, plus copies of it on two made-up later days (9 games):**
+  - labels G1 G2 G3 · G1 G2 · G1 G2 G3 G4
+  - dates Oct 7, Oct 9, Oct 14
+  - dashed lines between the days
+- **120 made-up games over 80 days:** no game numbers, 14 dates without
+  overlap.
+
+---
+
 ## [2.4.0]: 2026-10-08: Rosters, game phases, vision, resources, flame
 
 Asked for after reviewing the first real scrim. The request was:
